@@ -1,19 +1,14 @@
 import tensorflow as tf
 from tfwrapper import utils as tfutils
-
 import utils
-
 import numpy as np
 import os
 import time
 from medpy.metric import dc
-
 from config import system as sys_config
-
-sys_config.setup_GPU_environment()
-
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+
 
 class phiseg():
 
@@ -30,7 +25,6 @@ class phiseg():
 
         self.training_pl = tf.placeholder(tf.bool, shape=[], name='training_time')
         self.lr_pl = tf.placeholder(tf.float32, shape=[], name='learning_rate')
-
 
         # CREATE NETwORKS
 
@@ -82,32 +76,36 @@ class phiseg():
                                                      norm=exp_config.layer_norm,
                                                      x=self.x_inp)  # This is only needed for probUNET!
 
-        self.s_out_sm_list = [None]*self.exp_config.latent_levels
+        self.s_out_sm_list = [None] * self.exp_config.latent_levels
         for ii in range(self.exp_config.latent_levels):
             self.s_out_sm_list[ii] = tf.nn.softmax(self.s_out_list[ii])
 
         self.s_out_eval_list = self.exp_config.likelihood(self.prior_z_list_gen,
-                                                     self.training_pl,
-                                                     scope_reuse=True,
-                                                     n0=exp_config.n0,
-                                                     n_classes=exp_config.nlabels,
-                                                     resolution_levels=exp_config.resolution_levels,
-                                                     latent_levels=exp_config.latent_levels,
-                                                     image_size=exp_config.image_size,
-                                                     norm=exp_config.layer_norm,
-                                                     x=self.x_inp)   # This is only needed for probUNET!
+                                                          self.training_pl,
+                                                          scope_reuse=True,
+                                                          n0=exp_config.n0,
+                                                          n_classes=exp_config.nlabels,
+                                                          resolution_levels=exp_config.resolution_levels,
+                                                          latent_levels=exp_config.latent_levels,
+                                                          image_size=exp_config.image_size,
+                                                          norm=exp_config.layer_norm,
+                                                          x=self.x_inp)  # This is only needed for probUNET!
 
-        self.s_out_eval_sm_list = [None]*self.exp_config.latent_levels
-        for ii in range(self.exp_config.latent_levels):
+        self.s_out_eval_sm_list = [None] * self.exp_config.latent_levels
+        for ii in range(len(self.s_out_eval_list)):
             self.s_out_eval_sm_list[ii] = tf.nn.softmax(self.s_out_eval_list[ii])
 
+        is_proposed = hasattr(self.exp_config, 'is_proposed')
 
-        # Create final output from output list
-        self.s_out = self._aggregate_output_list(self.s_out_list, use_softmax=False)
-        self.s_out_eval = self._aggregate_output_list(self.s_out_eval_list, use_softmax=False)
+        if not is_proposed:
+            # Create final output from output list
+            self.s_out = self._aggregate_output_list(self.s_out_list, use_softmax=False)
+            self.s_out_eval = self._aggregate_output_list(self.s_out_eval_list, use_softmax=False)
+        else:
+            self.s_out = tf.stack(self.s_out_list)
+            self.s_out_eval = tf.stack(self.s_out_eval_list)
 
         self.s_out_eval_sm = tf.nn.softmax(self.s_out_eval)
-
         self.eval_xent = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.s_inp_oh, logits=self.s_out_eval)
 
         # Add losses
@@ -115,7 +113,8 @@ class phiseg():
         self.loss_tot = 0
 
         logging.info('ADDING LOSSES')
-        if hasattr(self.exp_config, 'residual_multinoulli_loss_weight') and exp_config.residual_multinoulli_loss_weight is not None:
+        if hasattr(self.exp_config,
+                   'residual_multinoulli_loss_weight') and exp_config.residual_multinoulli_loss_weight is not None:
             logging.info(' - Adding residual multinoulli loss')
             self.add_residual_multinoulli_loss()
 
@@ -156,7 +155,6 @@ class phiseg():
         # Create a session for running Ops on the Graph.
         self.sess = tf.Session(config=config)
 
-
     def checks(self):
 
         pass
@@ -189,7 +187,6 @@ class phiseg():
             lr_key, _ = utils.find_floor_in_list(self.exp_config.lr_schedule_dict.keys(), step)
             lr = self.exp_config.lr_schedule_dict[lr_key]
 
-
             x_b, s_b = data.train.next_batch(self.exp_config.batch_size)
             _, loss_tot_eval = self.sess.run([self.train_step, self.loss_tot], feed_dict={self.x_inp: x_b,
                                                                                           self.s_inp: s_b,
@@ -197,15 +194,14 @@ class phiseg():
                                                                                           self.lr_pl: lr})
 
             if step % self.exp_config.tensorboard_update_frequency == 0:
-
-                summary_str = self.sess.run(self.summary, feed_dict={self.x_inp: x_b, self.s_inp: s_b, self.training_pl: False, self.lr_pl: lr})
+                summary_str = self.sess.run(self.summary,
+                                            feed_dict={self.x_inp: x_b, self.s_inp: s_b, self.training_pl: False,
+                                                       self.lr_pl: lr})
                 self.summary_writer.add_summary(summary_str, step)
                 self.summary_writer.flush()
 
             if step % self.exp_config.validation_frequency == 0:
-
                 self._do_validation(data)
-
 
     def KL_two_gauss_with_diag_cov(self, mu0, sigma0, mu1, sigma1):
 
@@ -219,12 +215,11 @@ class phiseg():
         mu1_f = tfutils.flatten(mu1)
 
         return tf.reduce_mean(
-            0.5*tf.reduce_sum(tf.divide(sigma0_fs + tf.square(mu1_f - mu0_f), sigma1_fs + 1e-10)
-                              + logsigma1_fs
-                              - logsigma0_fs
-                              - 1, axis=1)
+            0.5 * tf.reduce_sum(tf.divide(sigma0_fs + tf.square(mu1_f - mu0_f), sigma1_fs + 1e-10)
+                                + logsigma1_fs
+                                - logsigma0_fs
+                                - 1, axis=1)
         )
-
 
     def multinoulli_loss_with_logits(self, x_gt, y_target):
 
@@ -237,7 +232,6 @@ class phiseg():
             tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(labels=x_f, logits=y_f), axis=1)
         )
 
-
     def add_residual_multinoulli_loss(self):
 
         # TODO: move s_accum outside of this function
@@ -247,20 +241,22 @@ class phiseg():
         for ii, s_ii in zip(reversed(range(self.exp_config.latent_levels)),
                             reversed(self.s_out_list)):
 
-            if ii == self.exp_config.latent_levels-1:
+            if ii == self.exp_config.latent_levels - 1:
 
                 self.s_accum[ii] = s_ii
-                self.loss_dict['residual_multinoulli_loss_lvl%d' % ii] = self.multinoulli_loss_with_logits(self.s_inp_oh, self.s_accum[ii])
+                self.loss_dict['residual_multinoulli_loss_lvl%d' % ii] = self.multinoulli_loss_with_logits(
+                    self.s_inp_oh, self.s_accum[ii])
 
             else:
 
-                self.s_accum[ii] = self.s_accum[ii+1] + s_ii
-                self.loss_dict['residual_multinoulli_loss_lvl%d' % ii] = self.multinoulli_loss_with_logits(self.s_inp_oh, self.s_accum[ii])
+                self.s_accum[ii] = self.s_accum[ii + 1] + s_ii
+                self.loss_dict['residual_multinoulli_loss_lvl%d' % ii] = self.multinoulli_loss_with_logits(
+                    self.s_inp_oh, self.s_accum[ii])
 
             logging.info(' -- Added residual multinoulli loss at level %d' % (ii))
 
-            self.loss_tot += self.exp_config.residual_multinoulli_loss_weight * self.loss_dict['residual_multinoulli_loss_lvl%d' % ii]
-
+            self.loss_tot += self.exp_config.residual_multinoulli_loss_weight * self.loss_dict[
+                'residual_multinoulli_loss_lvl%d' % ii]
 
     def add_hierarchical_KL_div_loss(self):
 
@@ -268,38 +264,34 @@ class phiseg():
         prior_mu_list = self.prior_mu_list
 
         if self.exp_config.exponential_weighting:
-            level_weights = [4**i for i in list(range(self.exp_config.latent_levels))]
+            level_weights = [4 ** i for i in list(range(self.exp_config.latent_levels))]
         else:
-            level_weights = [1]*self.exp_config.latent_levels
+            level_weights = [1] * self.exp_config.latent_levels
 
         for ii, mu_i, sigma_i in zip(reversed(range(self.exp_config.latent_levels)),
                                      reversed(self.mu_list),
                                      reversed(self.sigma_list)):
-
-            self.loss_dict['KL_divergence_loss_lvl%d' % ii] = level_weights[ii]*self.KL_two_gauss_with_diag_cov(
+            self.loss_dict['KL_divergence_loss_lvl%d' % ii] = level_weights[ii] * self.KL_two_gauss_with_diag_cov(
                 mu_i,
                 sigma_i,
                 prior_mu_list[ii],
                 prior_sigma_list[ii])
 
-            logging.info(' -- Added hierarchical loss with at level %d with alpha_%d=%d' % (ii,ii, level_weights[ii]))
+            logging.info(' -- Added hierarchical loss with at level %d with alpha_%d=%d' % (ii, ii, level_weights[ii]))
 
             self.loss_tot += self.exp_config.KL_divergence_loss_weight * self.loss_dict['KL_divergence_loss_lvl%d' % ii]
-
 
     def add_weight_decay(self):
 
         weights_norm = tf.reduce_sum(
-            input_tensor= tf.stack(
+            input_tensor=tf.stack(
                 [tf.nn.l2_loss(ii) for ii in tf.get_collection('weight_variables')]
             ),
             name='weights_norm'
         )
 
-        self.loss_dict['weight_decay'] = self.exp_config.weight_decay_weight*weights_norm
+        self.loss_dict['weight_decay'] = self.exp_config.weight_decay_weight * weights_norm
         self.loss_tot += self.loss_dict['weight_decay']
-
-
 
     def _aggregate_output_list(self, output_list, use_softmax=True):
 
@@ -312,7 +304,7 @@ class phiseg():
 
     def generate_samples_from_z(self, z_list, x_in, output_all_levels=False):
 
-        feed_dict = { i: d for i, d in zip(self.z_list, z_list)}
+        feed_dict = {i: d for i, d in zip(self.z_list, z_list)}
         feed_dict[self.training_pl] = False
         feed_dict[self.x_inp] = x_in
 
@@ -321,18 +313,17 @@ class phiseg():
         else:
             return self.sess.run(self.s_out, feed_dict=feed_dict)
 
-
     def generate_prior_samples(self, x_in, return_params=False):
 
         z_samples = self.sess.run(self.prior_z_list_gen, feed_dict={self.training_pl: False, self.x_inp: x_in})
 
         if return_params:
             prior_mu_list = self.sess.run(self.prior_mu_list_gen, feed_dict={self.training_pl: False, self.x_inp: x_in})
-            prior_sigma_list = self.sess.run(self.prior_sigma_list_gen, feed_dict={self.training_pl: False, self.x_inp: x_in})
+            prior_sigma_list = self.sess.run(self.prior_sigma_list_gen,
+                                             feed_dict={self.training_pl: False, self.x_inp: x_in})
             return z_samples, prior_mu_list, prior_sigma_list
         else:
             return z_samples
-
 
     def predict(self, x_in, num_samples=50, return_softmax=False):
 
@@ -343,7 +334,7 @@ class phiseg():
 
         cumsum_sm = self.sess.run(self.s_out_eval_sm, feed_dict=feed_dict)
 
-        for i in range(num_samples-1):
+        for i in range(num_samples - 1):
             # print(' - sample: %d' % (i+1))
             cumsum_sm += self.sess.run(self.s_out_eval_sm, feed_dict=feed_dict)
 
@@ -351,7 +342,6 @@ class phiseg():
             return np.argmax(cumsum_sm, axis=-1), cumsum_sm / num_samples
 
         return np.argmax(cumsum_sm, axis=-1)
-
 
     def predict_segmentation_sample(self, x_in, return_softmax=False):
 
@@ -363,7 +353,6 @@ class phiseg():
             return self.sess.run(self.s_out_eval_sm, feed_dict=feed_dict)
         return np.argmax(self.sess.run(self.s_out_eval, feed_dict=feed_dict), axis=-1)
 
-
     def predict_segmentation_sample_levels(self, x_in, return_softmax=False):
 
         feed_dict = {}
@@ -373,7 +362,6 @@ class phiseg():
         if return_softmax:
             return self.sess.run(self.s_out_eval_sm_list, feed_dict=feed_dict)
         return self.sess.run(self.s_out_eval_list, feed_dict=feed_dict)
-
 
     def predict_segmentation_sample_variance_sm_cov(self, x_in, num_samples):
 
@@ -387,9 +375,9 @@ class phiseg():
         for _ in range(num_samples):
             segms.append(self.sess.run(self.s_out_eval, feed_dict=feed_dict))
 
-        segm_arr = np.squeeze(np.asarray(segms)) # num_samples x size_1 x size_2 x n_classes - 1
-        segm_arr = segm_arr[...,:-1]
-        segm_arr = segm_arr.transpose((1,2,3,0))
+        segm_arr = np.squeeze(np.asarray(segms))  # num_samples x size_1 x size_2 x n_classes - 1
+        segm_arr = segm_arr[..., :-1]
+        segm_arr = segm_arr.transpose((1, 2, 3, 0))
         segm_arr = np.clip(segm_arr, 1e-5, 1 - (1e-5))
 
         corr_mat = np.einsum('ghij,ghkj->ghik', segm_arr, segm_arr) / num_samples
@@ -397,11 +385,9 @@ class phiseg():
         outer_mu = np.einsum('ghi,ghj->ghij', mu_mat, mu_mat)
         cov_mat = corr_mat - outer_mu  # 128, 128, nlabels -1 x nlabels -1
         # det_cov_mat = np.linalg.det(cov_mat)
-        det_cov_mat, _ = np.linalg.eig(cov_mat) # 128, 128, nlabels -1
-
+        det_cov_mat, _ = np.linalg.eig(cov_mat)  # 128, 128, nlabels -1
 
         return np.sum(det_cov_mat, axis=-1)
-
 
     def predict_segmentation_sample_variance_sm_cov_bf(self, x_in, num_samples):
 
@@ -429,7 +415,6 @@ class phiseg():
 
         return out
 
-
     def get_crossentropy_error_map(self, s_gt, x_in, num_samples=100):
 
         feed_dict = {}
@@ -444,7 +429,6 @@ class phiseg():
         err_maps_arr = np.asarray(err_maps)
 
         return np.mean(err_maps_arr, axis=0)
-
 
     def predict_mean_variance_and_error_maps(self, s_gt, x_in, num_samples):
 
@@ -474,12 +458,10 @@ class phiseg():
 
         return means, vars, errs
 
-
     def generate_samples_from_prior(self, x_in, output_all_levels=False):
 
         z_samples = self.generate_prior_samples(x_in)
         return self.generate_samples_from_z(z_samples, output_all_levels)
-
 
     def generate_posterior_samples(self, x_in, s_in, return_params=False):
 
@@ -488,19 +470,19 @@ class phiseg():
                                                           self.s_inp: s_in})
 
         if return_params:
-            mu_list = self.sess.run(self.mu_list, feed_dict={self.training_pl: False, self.x_inp: x_in, self.s_inp: s_in})
-            sigma_list = self.sess.run(self.sigma_list, feed_dict={self.training_pl: False, self.x_inp: x_in, self.s_inp: s_in})
+            mu_list = self.sess.run(self.mu_list,
+                                    feed_dict={self.training_pl: False, self.x_inp: x_in, self.s_inp: s_in})
+            sigma_list = self.sess.run(self.sigma_list,
+                                       feed_dict={self.training_pl: False, self.x_inp: x_in, self.s_inp: s_in})
             return z_samples, mu_list, sigma_list
         else:
             return z_samples
-
 
     def generate_all_output_levels(self, x_in):
 
         y_list = self.sess.run(self.s_out_list, feed_dict={self.x_inp: x_in,
                                                            self.training_pl: False})
         return y_list
-
 
     def load_weights(self, log_dir=None, type='latest', **kwargs):
 
@@ -523,7 +505,6 @@ class phiseg():
             raise ValueError('Argument type=%s is unknown. type can be latest/iter.' % type)
 
         self.saver.restore(self.sess, init_checkpoint_path)
-
 
     ### HELPER FUNCTIONS #################
 
@@ -548,7 +529,6 @@ class phiseg():
                                          feed_dict={self.x_inp: train_x, self.s_inp: train_s, self.training_pl: False}
                                          )
 
-
         logging.info('----- Step: %d ------' % global_step)
         logging.info('BATCH VALIDATION:')
         for ii, loss_name in enumerate(self.loss_dict.keys()):
@@ -564,7 +544,8 @@ class phiseg():
         ged_list = []
         ncc_list = []
 
-        N = data.validation.images.shape[0] if self.exp_config.num_validation_images == 'all' else self.exp_config.num_validation_images
+        N = data.validation.images.shape[
+            0] if self.exp_config.num_validation_images == 'all' else self.exp_config.num_validation_images
 
         for ii in range(N):
 
@@ -572,7 +553,7 @@ class phiseg():
 
             x = data.validation.images[ii, ...].reshape([1] + list(self.exp_config.image_size))
             s_gt_arr = data.validation.labels[ii, ...]
-            s = s_gt_arr[:,:,np.random.choice(self.exp_config.annotator_range)]
+            s = s_gt_arr[:, :, np.random.choice(self.exp_config.annotator_range)]
 
             x_b = np.tile(x, [self.exp_config.validation_samples, 1, 1, 1])
             s_b = np.tile(s, [self.exp_config.validation_samples, 1, 1])
@@ -589,10 +570,11 @@ class phiseg():
             s_pred_arr = np.argmax(s_pred_sm_arr, axis=-1)
             s_gt_arr_r = s_gt_arr.transpose((2, 0, 1))  # num gts x X x Y
 
-            s_gt_arr_r_sm = utils.convert_batch_to_onehot(s_gt_arr_r, self.exp_config.nlabels)  # num gts x X x Y x nlabels
+            s_gt_arr_r_sm = utils.convert_batch_to_onehot(s_gt_arr_r,
+                                                          self.exp_config.nlabels)  # num gts x X x Y x nlabels
 
             ged = utils.generalised_energy_distance(s_pred_arr, s_gt_arr_r,
-                                                    nlabels=self.exp_config.nlabels-1,
+                                                    nlabels=self.exp_config.nlabels - 1,
                                                     label_range=range(1, self.exp_config.nlabels))
 
             ncc = utils.variance_ncc_dist(s_pred_sm_arr, s_gt_arr_r_sm)
@@ -607,7 +589,8 @@ class phiseg():
 
                 if np.sum(binary_gt) == 0 and np.sum(binary_pred) == 0:
                     per_lbl_dice.append(1)
-                elif np.sum(binary_pred) > 0 and np.sum(binary_gt) == 0 or np.sum(binary_pred) == 0 and np.sum(binary_gt) > 0:
+                elif np.sum(binary_pred) > 0 and np.sum(binary_gt) == 0 or np.sum(binary_pred) == 0 and np.sum(
+                        binary_gt) > 0:
                     per_lbl_dice.append(0)
                 else:
                     per_lbl_dice.append(dc(binary_pred, binary_gt))
@@ -661,7 +644,7 @@ class phiseg():
 
         # Create Validation Summary feed dict
         z_prior_list = self.generate_prior_samples(x_in=val_x)
-        val_summary_feed_dict = {i: d for i, d in zip(self.z_list_gen, z_prior_list)} # this is for prior samples
+        val_summary_feed_dict = {i: d for i, d in zip(self.z_list_gen, z_prior_list)}  # this is for prior samples
         val_summary_feed_dict[self.x_for_gen] = val_x
 
         # Fill placeholders for all losses
@@ -700,7 +683,6 @@ class phiseg():
                                           )
         self.summary_writer.add_summary(train_summary_msg, global_step)
 
-
     def _make_tensorboard_summaries(self):
 
         def create_im_summary(img, name, rescale_mode, batch_size=self.exp_config.batch_size):
@@ -713,8 +695,8 @@ class phiseg():
                 raise ValueError("Unexpected tensor ndim: %d" % tfutils.tfndims(img))
 
             nlabels = self.exp_config.nlabels if rescale_mode == 'labelmap' else None
-            return tf.summary.image(name, tfutils.put_kernels_on_grid(img_disp, batch_size=batch_size, rescale_mode=rescale_mode, nlabels=nlabels))
-
+            return tf.summary.image(name, tfutils.put_kernels_on_grid(img_disp, batch_size=batch_size,
+                                                                      rescale_mode=rescale_mode, nlabels=nlabels))
 
         tf.summary.scalar('batch_total_loss', self.loss_tot)
         tf.summary.scalar('learning_rate', self.lr_pl)
@@ -732,19 +714,21 @@ class phiseg():
             create_im_summary(tf.argmax(self.s_out, axis=-1), 'train_s_out', rescale_mode='labelmap')
 
             for ii in range(self.exp_config.latent_levels):
-                create_im_summary(tf.argmax(self.s_out_list[ii], axis=-1), 'train_s_out_list_%d' % ii, rescale_mode='labelmap')
-                create_im_summary(tf.argmax(self.s_accum[ii], axis=-1), 'train_s_accum_list_%d' % ii, rescale_mode='labelmap')
-
+                create_im_summary(tf.argmax(self.s_out_list[ii], axis=-1), 'train_s_out_list_%d' % ii,
+                                  rescale_mode='labelmap')
+                create_im_summary(tf.argmax(self.s_accum[ii], axis=-1), 'train_s_accum_list_%d' % ii,
+                                  rescale_mode='labelmap')
 
         # Build the summary Tensor based on the TF collection of Summaries.
         self.summary = tf.summary.merge_all()
 
         # Validation summaries
-        self.validation_loss_pl_dict= {}
+        self.validation_loss_pl_dict = {}
         val_summary_list = []
         for loss_name in self.loss_dict.keys():
             self.validation_loss_pl_dict[loss_name] = tf.placeholder(tf.float32, shape=[], name='val_%s' % loss_name)
-            val_summary_list.append(tf.summary.scalar('val_batch_%s' % loss_name, self.validation_loss_pl_dict[loss_name]))
+            val_summary_list.append(
+                tf.summary.scalar('val_batch_%s' % loss_name, self.validation_loss_pl_dict[loss_name]))
 
         self.val_summary = tf.summary.merge(val_summary_list)
 
@@ -759,9 +743,10 @@ class phiseg():
             val_img_sum.append(create_im_summary(tf.argmax(self.s_out, axis=-1), 'val_s_out', rescale_mode='labelmap'))
 
             for ii in range(self.exp_config.latent_levels):
-
-                val_img_sum.append(create_im_summary(tf.argmax(self.s_out_list[ii], axis=-1), 'val_s_out_list_%d' % ii, rescale_mode='labelmap'))
-                val_img_sum.append(create_im_summary(tf.argmax(self.s_accum[ii], axis=-1), 'val_s_accum_list_%d' % ii, rescale_mode='labelmap'))
+                val_img_sum.append(create_im_summary(tf.argmax(self.s_out_list[ii], axis=-1), 'val_s_out_list_%d' % ii,
+                                                     rescale_mode='labelmap'))
+                val_img_sum.append(create_im_summary(tf.argmax(self.s_accum[ii], axis=-1), 'val_s_accum_list_%d' % ii,
+                                                     rescale_mode='labelmap'))
 
             self.x_for_gen = tf.placeholder(tf.float32, shape=self.x_inp.shape)
             self.z_list_gen = []
@@ -792,7 +777,6 @@ class phiseg():
         self.val_ncc = tf.placeholder(tf.float32, shape=[], name='val_ncc')
         val_ncc_summary = tf.summary.scalar('validation_NCC', self.val_ncc)
 
-
         self.val_lbl_dice_scores = []
         val_lbl_dice_summaries = []
         for ii in range(self.exp_config.nlabels):
@@ -809,14 +793,14 @@ class phiseg():
                                              val_ncc_summary])
 
         # Train summaries
-        self.train_loss_pl_dict= {}
+        self.train_loss_pl_dict = {}
         train_summary_list = []
         for loss_name in self.loss_dict.keys():
             self.train_loss_pl_dict[loss_name] = tf.placeholder(tf.float32, shape=[], name='val_%s' % loss_name)
-            train_summary_list.append(tf.summary.scalar('train_batch_%s' % loss_name, self.train_loss_pl_dict[loss_name]))
+            train_summary_list.append(
+                tf.summary.scalar('train_batch_%s' % loss_name, self.train_loss_pl_dict[loss_name]))
 
         self.train_summary = tf.summary.merge(train_summary_list)
-
 
     def _setup_log_dir_and_continue_mode(self):
 
@@ -830,7 +814,6 @@ class phiseg():
         if tf.gfile.Exists(self.log_dir):
             init_checkpoint_path = tfutils.get_latest_model_checkpoint_path(self.log_dir, 'model.ckpt')
             if init_checkpoint_path is not False:
-
                 self.init_checkpoint_path = init_checkpoint_path
                 self.continue_run = True
                 self.init_step = int(self.init_checkpoint_path.split('/')[-1].split('-')[-1])

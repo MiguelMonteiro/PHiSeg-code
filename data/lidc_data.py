@@ -55,7 +55,7 @@ class lidc_data():
 if __name__ == '__main__':
 
     # If the program is called as main, perform some debugging operations
-    from phiseg.experiments import phiseg_7_5 as exp_config
+    from phiseg.experiments import phiseg_7_5_4annot as exp_config
     data = lidc_data(exp_config)
 
     print(data.validation.images.shape)

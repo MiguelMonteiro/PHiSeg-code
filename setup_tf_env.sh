@@ -1,1 +1,0 @@
-source /vol/cuda/9.0.176/setup.sh

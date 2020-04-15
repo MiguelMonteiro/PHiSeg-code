@@ -13,6 +13,9 @@ layer_norm = tfnorm.batch_norm
 
 latent_levels = 1
 resolution_levels = 7
+rank = 10
+mc_samples = 20
+is_proposed = True
 n0 = 32
 zdim0 = 6
 max_channel_power = 4  # max number of channels will be n0*2**max_channel_power

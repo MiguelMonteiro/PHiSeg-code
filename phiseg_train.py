@@ -1,8 +1,6 @@
 import logging
-
 from importlib.machinery import SourceFileLoader
 import argparse
-
 from data.data_switch import data_switch
 import os
 import config.system as sys_config
@@ -32,12 +30,14 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(
         description="Script for training")
-    parser.add_argument("EXP_PATH", type=str, help="Path to experiment config file")
+    parser.add_argument("--exp-path", type=str, help="Path to experiment config file")
+    parser.add_argument("--device", type=str, help="device for computation")
+
     args = parser.parse_args()
 
-    config_file = args.EXP_PATH
+    config_file = args.exp_path
     config_module = config_file.split('/')[-1].rstrip('.py')
-
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.device
     exp_config = SourceFileLoader(config_module, config_file).load_module()
 
     log_dir = os.path.join(sys_config.log_root, exp_config.log_dir_name, exp_config.experiment_name)
