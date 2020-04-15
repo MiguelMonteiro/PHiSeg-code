@@ -47,8 +47,6 @@ annotator_range = [0]  # which annotators to actually use for training
 KL_divergence_loss_weight = None
 exponential_weighting = True
 
-residual_multinoulli_loss_weight = 1.0
-
 # monitoring
 do_image_summaries = True
 rescale_RGB = False

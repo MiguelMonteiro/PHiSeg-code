@@ -7,6 +7,7 @@ import time
 from medpy.metric import dc
 from config import system as sys_config
 import logging
+import math
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
@@ -76,10 +77,6 @@ class phiseg():
                                                      norm=exp_config.layer_norm,
                                                      x=self.x_inp)  # This is only needed for probUNET!
 
-        self.s_out_sm_list = [None] * self.exp_config.latent_levels
-        for ii in range(self.exp_config.latent_levels):
-            self.s_out_sm_list[ii] = tf.nn.softmax(self.s_out_list[ii])
-
         self.s_out_eval_list = self.exp_config.likelihood(self.prior_z_list_gen,
                                                           self.training_pl,
                                                           scope_reuse=True,
@@ -91,19 +88,24 @@ class phiseg():
                                                           norm=exp_config.layer_norm,
                                                           x=self.x_inp)  # This is only needed for probUNET!
 
+        is_proposed = hasattr(self.exp_config, 'is_proposed')
+        if is_proposed:
+            self.dist_train = self.s_out_list[1]
+            self.s_out_list = self.s_out_list[0]
+            self.dist_eval = self.s_out_eval_list[1]
+            self.s_out_eval_list = self.s_out_eval_list[0]
+
+        self.s_out_sm_list = [None] * self.exp_config.latent_levels
+        for ii in range(self.exp_config.latent_levels):
+            self.s_out_sm_list[ii] = tf.nn.softmax(self.s_out_list[ii])
+
         self.s_out_eval_sm_list = [None] * self.exp_config.latent_levels
         for ii in range(len(self.s_out_eval_list)):
             self.s_out_eval_sm_list[ii] = tf.nn.softmax(self.s_out_eval_list[ii])
 
-        is_proposed = hasattr(self.exp_config, 'is_proposed')
-
-        if not is_proposed:
-            # Create final output from output list
-            self.s_out = self._aggregate_output_list(self.s_out_list, use_softmax=False)
-            self.s_out_eval = self._aggregate_output_list(self.s_out_eval_list, use_softmax=False)
-        else:
-            self.s_out = tf.stack(self.s_out_list)
-            self.s_out_eval = tf.stack(self.s_out_eval_list)
+        # Create final output from output list
+        self.s_out = self._aggregate_output_list(self.s_out_list, use_softmax=False)
+        self.s_out_eval = self._aggregate_output_list(self.s_out_eval_list, use_softmax=False)
 
         self.s_out_eval_sm = tf.nn.softmax(self.s_out_eval)
         self.eval_xent = tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.s_inp_oh, logits=self.s_out_eval)
@@ -113,6 +115,10 @@ class phiseg():
         self.loss_tot = 0
 
         logging.info('ADDING LOSSES')
+        if is_proposed:
+            logging.info(' - Added proposed loss')
+            self.add_proposed_loss()
+
         if hasattr(self.exp_config,
                    'residual_multinoulli_loss_weight') and exp_config.residual_multinoulli_loss_weight is not None:
             logging.info(' - Adding residual multinoulli loss')
@@ -232,6 +238,24 @@ class phiseg():
             tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(labels=x_f, logits=y_f), axis=1)
         )
 
+    def add_proposed_loss(self):
+        labels = self.s_inp_oh
+        mc_samples = self.exp_config.mc_samples
+        shape = tuple(labels.shape[1:])
+        dist = self.dist_train
+        logit_samples = dist.sample(mc_samples)
+        logit_samples = tf.reshape(logit_samples, (mc_samples, -1) + shape)
+        labels = tf.broadcast_to(labels, (mc_samples, -1) + shape)
+        log_prob = -tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logit_samples, dim=-1)
+        log_prob = tf.reduce_sum(tf.reshape(log_prob, (mc_samples, -1, np.prod(shape[:-1]))), axis=-1)
+        loglikelihood = tf.reduce_mean(tf.reduce_logsumexp(log_prob, axis=0) - math.log(mc_samples))
+        loss = -loglikelihood
+
+        self.loss_dict['proposed_loss'] = loss
+        self.loss_tot += loss
+        # so the code does not break
+        self.s_accum = self.s_out_list
+
     def add_residual_multinoulli_loss(self):
 
         # TODO: move s_accum outside of this function
@@ -325,11 +349,26 @@ class phiseg():
         else:
             return z_samples
 
-    def predict(self, x_in, num_samples=50, return_softmax=False):
+    def predict_proposed(self, x_in, return_softmax=False):
 
         feed_dict = {}
         feed_dict[self.training_pl] = False
         feed_dict[self.x_inp] = x_in
+
+        dist_eval = self.sess.run(self.dist_eval, feed_dict=feed_dict)
+        mean = dist_eval.loc
+        prediction = np.argmax(mean, axis=-1)
+        if return_softmax:
+            return prediction, 1 #softmax(mean)
+
+        return prediction
+
+    def predict(self, x_in, num_samples=50, return_softmax=False):
+        is_proposed = hasattr(self.exp_config, 'is_proposed')
+        if is_proposed:
+            return self.predict_proposed(x_in, return_softmax)
+
+        feed_dict = {self.training_pl: False, self.x_inp: x_in}
         # feed_dict[self.s_inp] = np.zeros([x_in.shape[0]] + self.s_inp.get_shape().as_list()[1:])  # dummy
 
         cumsum_sm = self.sess.run(self.s_out_eval_sm, feed_dict=feed_dict)

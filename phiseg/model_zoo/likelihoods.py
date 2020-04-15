@@ -105,9 +105,8 @@ def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tf
         dist = MultivariateNormalDiagPlusLowRank(loc=mean, scale_diag=cov_diag, scale_perturb_factor=cov_factor)
 
         s = dist.sample(1)
-        s = tf.reshape(s, (1, -1) + shape)
-        s = list(s)
-        return s
+        s = tf.reshape(s, (-1, ) + shape)
+        return [[s], dist]
 
 
 def det_unet2D(z_list, training, image_size, n_classes, scope_reuse=False, norm=tfnorm.batch_norm, **kwargs):
