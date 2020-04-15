@@ -3,7 +3,7 @@ import tensorflow as tf
 from tfwrapper import normalisation as tfnorm
 
 experiment_name = 'proposed_1annot'
-log_dir_name = 'lidc2'
+log_dir_name = 'lidc'
 
 # architecture
 posterior = posteriors.dummy
