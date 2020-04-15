@@ -18,7 +18,6 @@ def main(exp_config):
     logging.info('**************************************************************')
     logging.info(' *** Running Experiment: %s', exp_config.experiment_name)
     logging.info('**************************************************************')
-
     # Get Data
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
