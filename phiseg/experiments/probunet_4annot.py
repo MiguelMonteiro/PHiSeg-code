@@ -38,7 +38,7 @@ lr_schedule_dict = {0: 1e-3}
 # lr_schedule_dict = {0: 1e-4, 80000: 0.5e-4, 160000: 1e-5, 240000: 0.5e-6} #  {0: 1e-3}
 deep_supervision = True
 batch_size = 12
-num_iter = 5000000
+num_iter = 500000
 annotator_range = range(num_labels_per_subject)  # which annotators to actually use for training
 
 # losses

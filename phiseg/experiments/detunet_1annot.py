@@ -37,7 +37,7 @@ optimizer = tf.train.AdamOptimizer
 lr_schedule_dict = {0: 1e-3}
 deep_supervision = True
 batch_size = 12
-num_iter = 5000000
+num_iter = 500000
 annotator_range = [0]  # which annotators to actually use for training
 
 # losses
