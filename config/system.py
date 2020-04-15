@@ -13,9 +13,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 at_biwi = True  # Are you running this code from the ETH Computer Vision Lab (Biwi)?
 
-project_root = '/vol/biomedic/users/mm6818/Projects/variational_hydra/PHiSeg-code'
+project_root = '/vol/biomedic2/mm6818/PycharmProjects/PHiSeg-code'
 local_hostnames = ['battle']  # used to check if on cluster or not
-log_root = '/vol/biomedic/users/mm6818/variational_hydra/PhiSeg-code/logs'
+log_root = '/vol/biomedic/users/mm6818/variational_hydra/phiseg_jobs'
 
 ##################################################################################
 
@@ -23,7 +23,7 @@ running_on_gpu_host = True if socket.gethostname() not in local_hostnames else F
 
 
 def setup_GPU_environment():
-    os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     logging.info('Setting CUDA_VISIBLE_DEVICES variable...')
     logging.info('CUDA_VISIBLE_DEVICES is %s' % os.environ['CUDA_VISIBLE_DEVICES'])
 
