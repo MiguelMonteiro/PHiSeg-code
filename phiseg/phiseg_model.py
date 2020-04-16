@@ -243,9 +243,9 @@ class phiseg():
         mc_samples = self.exp_config.mc_samples
         shape = tuple(labels.shape[1:])
         dist = self.dist_train
-        logit_samples = dist.sample(mc_samples)
+        logit_samples = dist.rsample((mc_samples, ))
         logit_samples = tf.reshape(logit_samples, (mc_samples, -1) + shape)
-        labels = tf.broadcast_to(labels, (mc_samples, -1) + shape)
+        labels = tf.tile(tf.expand_dims(labels, axis=0), (mc_samples, ) + (1, ) * len(labels.shape))
         log_prob = -tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logit_samples, dim=-1)
         log_prob = tf.reduce_sum(tf.reshape(log_prob, (mc_samples, -1, np.prod(shape[:-1]))), axis=-1)
         loglikelihood = tf.reduce_mean(tf.reduce_logsumexp(log_prob, axis=0) - math.log(mc_samples))

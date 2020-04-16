@@ -6,7 +6,6 @@ import nibabel as nib
 import numpy as np
 import os
 import logging
-from skimage import measure, transform
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 from medpy.metric import jc
 
