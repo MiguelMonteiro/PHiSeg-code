@@ -21,8 +21,8 @@ structures_dict = {1: 'RV', 2: 'Myo', 3: 'LV'}
 
 def main(model_path, exp_config, do_plots=False):
 
-    n_samples = 50
-    model_selection = 'best_ged'
+    n_samples = 100
+    model_selection = 'latest'
 
     # Get Data
     phiseg_model = phiseg(exp_config=exp_config)
@@ -85,13 +85,15 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(
         description="Script for a simple test loop evaluating a network on the test dataset")
-    parser.add_argument("EXP_PATH", type=str, help="Path to experiment folder (assuming you are in the working directory)")
+    parser.add_argument("--exp-path", type=str, help="Path to experiment folder")
+    parser.add_argument("--config-file", type=str, help="Path to config")
+    parser.add_argument("--device", type=str, help="device for computation")
     args = parser.parse_args()
 
     base_path = sys_config.project_root
 
-    model_path = args.EXP_PATH
-    config_file = glob.glob(model_path + '/*py')[0]
+    model_path = args.exp_path
+    config_file = args.config_file
     config_module = config_file.split('/')[-1].rstrip('.py')
 
     exp_config = SourceFileLoader(config_module, os.path.join(config_file)).load_module()
