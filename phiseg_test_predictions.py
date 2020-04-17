@@ -104,7 +104,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device
-    base_path = sys_config.project_root
 
     model_path = args.exp_path
     config_file = args.config_file
