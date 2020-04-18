@@ -364,9 +364,9 @@ class phiseg():
         return prediction
 
     def predict(self, x_in, num_samples=50, return_softmax=False):
-        is_proposed = hasattr(self.exp_config, 'is_proposed')
-        if is_proposed:
-            return self.predict_proposed(x_in, return_softmax)
+        # is_proposed = hasattr(self.exp_config, 'is_proposed')
+        # if is_proposed:
+        #     return self.predict_proposed(x_in, return_softmax)
 
         feed_dict = {self.training_pl: False, self.x_inp: x_in}
         # feed_dict[self.s_inp] = np.zeros([x_in.shape[0]] + self.s_inp.get_shape().as_list()[1:])  # dummy
