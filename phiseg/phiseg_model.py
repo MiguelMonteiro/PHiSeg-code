@@ -355,8 +355,8 @@ class phiseg():
         feed_dict[self.training_pl] = False
         feed_dict[self.x_inp] = x_in
 
-        dist_eval = self.sess.run(self.dist_eval, feed_dict=feed_dict)
-        mean = dist_eval.loc
+        mean = self.sess.run(self.dist_eval.loc, feed_dict=feed_dict)
+        mean = np.reshape(mean, x_in.shape[:-1] + (2, ))
         prediction = np.argmax(mean, axis=-1)
         if return_softmax:
             return prediction, 1 #softmax(mean)
