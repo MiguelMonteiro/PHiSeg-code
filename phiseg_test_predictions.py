@@ -23,9 +23,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 # structures_dict = {1: 'RV', 2: 'Myo', 3: 'LV'}
 
-model_selection = 'latest'
 
-def main(model_path, exp_config, do_plots=False):
+def main(model_path, exp_config, model_selection='latest'):
 
     # Get Data
     phiseg_model = phiseg(exp_config=exp_config)
@@ -53,16 +52,6 @@ def main(model_path, exp_config, do_plots=False):
         per_lbl_dice = []
         per_pixel_preds = []
         per_pixel_gts = []
-
-        if do_plots and not sys_config.running_on_gpu_host:
-            fig = plt.figure()
-            fig.add_subplot(131)
-            plt.imshow(np.squeeze(x), cmap='gray')
-            fig.add_subplot(132)
-            plt.imshow(np.squeeze(y_))
-            fig.add_subplot(133)
-            plt.imshow(np.squeeze(y))
-            plt.show()
 
         for lbl in range(exp_config.nlabels):
 
