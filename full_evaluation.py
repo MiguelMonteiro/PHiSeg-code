@@ -1,4 +1,5 @@
 import os
+import tensorflow as tf
 from importlib.machinery import SourceFileLoader
 import argparse
 import numpy as np
@@ -34,6 +35,7 @@ if __name__ == '__main__':
             'proposed_4annot']
 
     for exp in exps:
+        tf.reset_default_graph()
         model_path = os.path.join(base_exp_path, exp)
         config_file = os.path.join(base_config_path, exp + '.py')
         config_module = config_file.split('/')[-1].rstrip('.py')
