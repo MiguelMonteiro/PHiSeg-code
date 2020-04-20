@@ -35,7 +35,6 @@ if __name__ == '__main__':
             'proposed_4annot']
 
     for exp in exps:
-        tf.reset_default_graph()
         model_path = os.path.join(base_exp_path, exp)
         config_file = os.path.join(base_config_path, exp + '.py')
         config_module = config_file.split('/')[-1].rstrip('.py')
@@ -44,6 +43,7 @@ if __name__ == '__main__':
         dsc_path = os.path.join(model_path, 'dice_%s.npz' % model_selection)
         if not os.path.exists(dsc_path):
             dsc_eval(model_path, exp_config=exp_config, model_selection=model_selection)
+            tf.reset_default_graph()
 
         dsc = np.load(dsc_path)['arr_0'][:, 1]
         report('DSC', dsc)
@@ -56,6 +56,7 @@ if __name__ == '__main__':
 
         if not (os.path.exists(ged_path) and os.path.exists(ncc_path)):
             dist_eval(model_path, exp_config=exp_config, model_selection=model_selection)
+            tf.reset_default_graph()
 
         ged = np.load(ged_path)['arr_0']
         report('GED', ged)
