@@ -82,7 +82,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100):
         if 'proposed' not in exp_config.experiment_name:
             prediction = np.argmax(np.sum(probs, axis=0), axis=-1)
         else:
-            phiseg_model.sess.run(phiseg_model.dist_eval.loc, feed_dict=feed_dict)
+            mean = phiseg_model.sess.run(phiseg_model.dist_eval.loc, feed_dict=feed_dict)
             mean = np.reshape(mean, image.shape[:-1] + (2,))
             prediction = np.argmax(mean, axis=-1)
 
