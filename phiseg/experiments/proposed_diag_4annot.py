@@ -2,7 +2,7 @@ from phiseg.model_zoo import likelihoods, posteriors, priors
 import tensorflow as tf
 from tfwrapper import normalisation as tfnorm
 
-experiment_name = 'proposed_4annot'
+experiment_name = 'proposed_diag_4annot'
 log_dir_name = 'lidc'
 
 # architecture
