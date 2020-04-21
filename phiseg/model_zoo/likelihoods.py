@@ -35,6 +35,24 @@ class LowRankMultivariateNormal(object):
         return (self.loc + _batch_mv(self.cov_factor, eps_W) + tf.sqrt(self.cov_diag) * eps_D)
 
 
+class DiagonalMultivariateNormal(object):
+    def __init__(self, loc, cov_diag):
+        self.loc = loc
+        self.cov_diag = cov_diag
+        self.batch_shape = tuple(tf.unstack(tf.shape(self.loc)[:-1]))
+        self.event_shape = tuple(tf.unstack(tf.shape(self.loc)[-1:]))
+
+    @staticmethod
+    def get_shape(shape):
+        return tuple(s.value if s.value is not None else -1 for s in shape)
+
+    def rsample(self, sample_shape):
+        assert isinstance(sample_shape, tuple)
+        shape = sample_shape + self.batch_shape + self.event_shape
+        eps_D = tf.random.normal(shape, dtype=self.loc.dtype)
+        return (self.loc + tf.sqrt(self.cov_diag) * eps_D)
+
+
 def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tfnorm.batch_norm, **kwargs):
     x = kwargs.get('x')
 
@@ -112,6 +130,8 @@ def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tf
 
         rank = kwargs.get('rank', 10)
         epsilon = kwargs.get('epsilon', 1e-5)
+        diagonal = kwargs.get('diagonal', False)
+
         mean = layers.conv2D(recomb, 'mean', num_filters=n_classes, kernel_size=(1, 1), activation=tf.identity)
         log_cov_diag = layers.conv2D(recomb, 'diag', num_filters=n_classes, kernel_size=(1, 1), activation=tf.identity)
         cov_factor = layers.conv2D(recomb, 'factor', num_filters=n_classes * rank, kernel_size=(1, 1),
@@ -122,7 +142,10 @@ def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tf
         mean = tf.reshape(mean, [-1, flat_size])
         cov_diag = tf.exp(tf.reshape(log_cov_diag, [-1, flat_size])) + epsilon
         cov_factor = tf.reshape(cov_factor, [-1, flat_size, rank])
-        dist = LowRankMultivariateNormal(loc=mean, cov_diag=cov_diag, cov_factor=cov_factor)
+        if diagonal:
+            dist = DiagonalMultivariateNormal(loc=mean, cov_diag=cov_diag)
+        else:
+            dist = LowRankMultivariateNormal(loc=mean, cov_diag=cov_diag, cov_factor=cov_factor)
 
         s = dist.rsample((1,))
         s = tf.reshape(s, (-1,) + shape)
