@@ -15,6 +15,22 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
+def summarize_results(base_exp_path, exps, model_selection='latest', num_samples=100):
+    output_dataframe = pd.DataFrame(index=exps)
+    for exp in exps:
+        csv_path = os.path.join(base_exp_path, exp, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv')
+        results = pd.read_csv(csv_path)
+        for column in results.columns:
+            if 'DSC' in column:
+                alt_dsc = np.array(results[column])
+                alt_dsc[np.isnan(alt_dsc)] = 1.
+                results[column + '_alt'] = alt_dsc
+        for column in results.columns:
+            output_dataframe.loc[exp, column + '_mean'] = np.nanmean(results[column])
+            output_dataframe.loc[exp, column + '_std'] = np.nanstd(results[column])
+    return output_dataframe
+
+
 def report_array(array, name):
     print(f'{name:s}:\t\t{np.mean(array):.6f} +- {np.std(array):.6f}')
 
@@ -117,12 +133,14 @@ if __name__ == '__main__':
     base_config_path = 'phiseg/experiments'
 
     exps = ['detunet_1annot',
-            'detunet_4annot',
-            'phiseg_7_5_1annot',
-            'phiseg_7_5_4annot',
             'probunet_1annot',
-            'probunet_4annot',
+            'phiseg_7_5_1annot',
+            'proposed_diag_1annot',
             'proposed_1annot',
+            'detunet_4annot',
+            'probunet_4annot',
+            'phiseg_7_5_4annot',
+            'proposed_diag_4annot',
             'proposed_4annot']
 
     for exp in exps:
@@ -134,3 +152,7 @@ if __name__ == '__main__':
         dataframe = test(model_path, exp_config, model_selection, num_samples)
         print(exp)
         report_dataframe(dataframe, num_classes=2, num_experts=4)
+
+    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples)
+    output_dataframe.to_csv(
+        os.path.join(base_exp_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv'))
