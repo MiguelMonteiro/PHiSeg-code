@@ -38,6 +38,7 @@ def report_array(array, name):
 def report_dataframe(dataframe, num_classes=2, num_experts=4):
     report_array(np.array(dataframe['GED']), 'GED')
     report_array(np.array(dataframe['NCC']), 'NCC')
+    report_array(np.array(dataframe['entropy']), 'entropy')
 
     for c in range(1, num_classes):
         for e in range(num_experts):
@@ -48,11 +49,12 @@ def report_dataframe(dataframe, num_classes=2, num_experts=4):
             report_array(dsc, 'Alt_' + key)
 
 
-def make_dataframe(ged, ncc, dsc):
+def make_dataframe(ged, ncc, dsc, entropy):
     dsc = np.array(dsc)
     ged = np.array(ged)
     ncc = np.array(ncc)
-    data_dict = {'GED': ged, 'NCC': ncc}
+    entropy = np.array(entropy)
+    data_dict = {'GED': ged, 'NCC': ncc, 'entropy': entropy}
 
     for e in range(dsc.shape[1]):
         for c in range(dsc.shape[-1]):
@@ -68,9 +70,9 @@ def calc_dsc(image_0, image_1):
         return dc(image_1, image_0)
 
 
-def test(model_path, exp_config, model_selection='latest', num_samples=100):
+def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False):
     output_path = os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv')
-    if os.path.exists(output_path):
+    if os.path.exists(output_path) and not overwrite:
         return pd.read_csv(output_path)
 
     tf.reset_default_graph()
@@ -83,6 +85,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100):
     dsc = []
     ged = []
     ncc = []
+    entropy = []
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -93,10 +96,13 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100):
         feed_dict = {phiseg_model.training_pl: False,
                      phiseg_model.x_inp: np.tile(image, [num_samples, 1, 1, 1])}
 
-        probs = phiseg_model.sess.run(phiseg_model.s_out_eval_sm, feed_dict=feed_dict)
-        samples = np.argmax(probs, axis=-1)
+        prob_maps = phiseg_model.sess.run(phiseg_model.s_out_eval_sm, feed_dict=feed_dict)
+        samples = np.argmax(prob_maps, axis=-1)
+        probability = np.mean(prob_maps, axis=0) + 1e-10
+        entropy.append(float(np.sum(-probability * np.log(probability))))
+
         if 'proposed' not in exp_config.experiment_name:
-            prediction = np.argmax(np.sum(probs, axis=0), axis=-1)
+            prediction = np.argmax(np.sum(prob_maps, axis=0), axis=-1)
         else:
             mean = phiseg_model.sess.run(phiseg_model.dist_eval.loc, feed_dict=feed_dict)[0]
             mean = np.reshape(mean, image.shape[:-1] + (2,))
@@ -112,8 +118,8 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100):
             targets_one_hot = utils.convert_batch_to_onehot(targets, exp_config.nlabels)
             ged.append(utils.generalised_energy_distance(samples, targets, nlabels=exp_config.nlabels - 1,
                                                          label_range=range(1, exp_config.nlabels)))
-            ncc.append(utils.variance_ncc_dist(probs, targets_one_hot)[0])
-    dataframe = make_dataframe(ged, ncc, dsc)
+            ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
+    dataframe = make_dataframe(ged, ncc, dsc, entropy)
     dataframe.to_csv(output_path, index=False)
     return dataframe
 
@@ -123,11 +129,14 @@ if __name__ == '__main__':
     parser.add_argument("--device", type=str, help="device for computation")
     parser.add_argument("--model-selection", type=str, help="model selection criterion", default='latest')
     parser.add_argument("--num-samples", type=int, help="number of samples for distribution evaluation", default=100)
+    parser.add_argument("--overwrite", type=bool, help="overwrite previous results", default=False)
+
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device
     model_selection = args.model_selection
     num_samples = args.num_samples
+    overwrite = args.overwrite
 
     base_exp_path = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs/lidc'
     base_config_path = 'phiseg/experiments'
@@ -153,6 +162,6 @@ if __name__ == '__main__':
         print(exp)
         report_dataframe(dataframe, num_classes=2, num_experts=4)
 
-    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples)
+    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples, overwrite)
     output_dataframe.to_csv(
         os.path.join(base_exp_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv'))

@@ -5,6 +5,7 @@ import numpy as np
 from data import lidc_data_loader
 from data.batch_provider import BatchProvider
 
+
 class lidc_data():
 
     def __init__(self, exp_config):
@@ -56,6 +57,7 @@ if __name__ == '__main__':
 
     # If the program is called as main, perform some debugging operations
     from phiseg.experiments import phiseg_7_5_4annot as exp_config
+
     data = lidc_data(exp_config)
 
     print(data.validation.images.shape)
@@ -63,7 +65,9 @@ if __name__ == '__main__':
     print(data.data['val']['images'].shape[0])
     print(data.data['test']['images'].shape[0])
     print(data.data['train']['images'].shape[0])
-    print(data.data['train']['images'].shape[0]+data.data['test']['images'].shape[0]+data.data['val']['images'].shape[0])
+    print(
+        data.data['train']['images'].shape[0] + data.data['test']['images'].shape[0] + data.data['val']['images'].shape[
+            0])
 
     print('DEBUGGING OUTPUT')
     print('training')
