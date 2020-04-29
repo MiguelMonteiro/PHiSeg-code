@@ -158,10 +158,10 @@ if __name__ == '__main__':
         config_module = config_file.split('/')[-1].rstrip('.py')
         exp_config = SourceFileLoader(config_module, os.path.join(config_file)).load_module()
 
-        dataframe = test(model_path, exp_config, model_selection, num_samples)
+        dataframe = test(model_path, exp_config, model_selection, num_samples, overwrite)
         print(exp)
         report_dataframe(dataframe, num_classes=2, num_experts=4)
 
-    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples, overwrite)
+    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples)
     output_dataframe.to_csv(
         os.path.join(base_exp_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv'))
