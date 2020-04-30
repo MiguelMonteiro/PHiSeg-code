@@ -24,7 +24,7 @@ else:
 
     def rotate_image_as_onehot(img, angle, nlabels, interp=cv2.INTER_LINEAR):
 
-        onehot_output = rotate_image(convert_to_onehot(img, nlabels=nlabels), angle, interp)
+        onehot_output = rotate_image(to_one_hot(img, nlabels=nlabels), angle, interp)
         return np.argmax(onehot_output, axis=-1)
 
 
@@ -36,7 +36,7 @@ else:
 
     def resize_image_as_onehot(im, size, nlabels, interp=cv2.INTER_LINEAR):
 
-        onehot_output = resize_image(convert_to_onehot(im, nlabels), size, interp=interp)
+        onehot_output = resize_image(to_one_hot(im, nlabels), size, interp=interp)
         return np.argmax(onehot_output, axis=-1)
 
 
@@ -69,7 +69,7 @@ else:
 
     def dense_image_warp_as_onehot(im, dx, dy, nlabels, interp=cv2.INTER_LINEAR, do_optimisation=True):
 
-        onehot_output = dense_image_warp(convert_to_onehot(im, nlabels), dx, dy, interp,
+        onehot_output = dense_image_warp(to_one_hot(im, nlabels), dx, dy, interp,
                                          do_optimisation=do_optimisation)
         return np.argmax(onehot_output, axis=-1)
 
@@ -91,20 +91,8 @@ def find_floor_in_list(l, t):
     return max_smallest, argmax_smallest
 
 
-def convert_to_onehot(lblmap, nlabels):
-    output = np.zeros((lblmap.shape[0], lblmap.shape[1], nlabels))
-    for ii in range(nlabels):
-        output[:, :, ii] = (lblmap == ii).astype(np.uint8)
-    return output
-
-
-def convert_batch_to_onehot(lblbatch, nlabels):
-    out = []
-    for ii in range(lblbatch.shape[0]):
-        lbl = convert_to_onehot(lblbatch[ii, ...], nlabels)
-        out.append(lbl)
-
-    return np.asarray(out)
+def to_one_hot(lblmap, nlabels):
+    return np.eye(nlabels)[lblmap].astype(np.uint8)
 
 
 def ncc(a, v, zero_norm=True):
@@ -289,6 +277,26 @@ def dist_fct(m1, m2, nlabels, label_range):
 
 def calc_diversity(prediction, samples, nlabels, label_range):
     return np.mean([dist_fct(prediction, sample, nlabels, label_range) for sample in samples])
+
+
+def iou(x, y, axis=-1):
+    iou_ = (x & y).sum(axis) / (x | y).sum(axis)
+    iou_[np.isnan(iou_)] = 1.
+    return iou_
+
+
+# exclude background
+def distance(x, y):
+    per_class_iou = iou(x[:, None], y[None, :], axis=-2)
+    return 1 - per_class_iou[..., 1:].mean(-1)
+
+
+def vectorized_generalised_energy_distance(sample_arr, gt_arr):
+    sample_arr = sample_arr.reshape((sample_arr.shape[0], -1, sample_arr.shape[-1]))
+    gt_arr = gt_arr.reshape((gt_arr.shape[0], -1, gt_arr.shape[-1]))
+    diversity = np.mean(distance(sample_arr, sample_arr))
+    ged = 2 * np.mean(distance(sample_arr, gt_arr)) - diversity - np.mean(distance(gt_arr, gt_arr))
+    return ged, diversity
 
 
 def generalised_energy_distance(sample_arr, gt_arr, nlabels, label_range):

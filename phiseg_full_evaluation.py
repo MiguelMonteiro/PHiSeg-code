@@ -122,12 +122,11 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
 
         # calculate DSC per expert
         dsc.append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
-        diversity.append(utils.calc_diversity(prediction, samples, nlabels=exp_config.nlabels - 1,
-                                              label_range=range(1, exp_config.nlabels)))
-
-        targets_one_hot = utils.convert_batch_to_onehot(targets, exp_config.nlabels)
-        ged.append(utils.generalised_energy_distance(samples, targets, nlabels=exp_config.nlabels - 1,
-                                                     label_range=range(1, exp_config.nlabels)))
+        targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
+        samples_one_hot = utils.to_one_hot(samples, exp_config.nlabels)
+        ged_, diversity_ = utils.vectorized_generalised_energy_distance(samples_one_hot, targets_one_hot)
+        ged.append(ged_)
+        diversity.append(diversity_)
         ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
     dataframe = make_dataframe(ged, ncc, dsc, entropy, diversity)
     dataframe.to_csv(output_path, index=False)

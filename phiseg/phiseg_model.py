@@ -608,8 +608,8 @@ class phiseg():
             s_pred_arr = np.argmax(s_pred_sm_arr, axis=-1)
             s_gt_arr_r = s_gt_arr.transpose((2, 0, 1))  # num gts x X x Y
 
-            s_gt_arr_r_sm = utils.convert_batch_to_onehot(s_gt_arr_r,
-                                                          self.exp_config.nlabels)  # num gts x X x Y x nlabels
+            s_gt_arr_r_sm = utils.to_one_hot(s_gt_arr_r,
+                                             self.exp_config.nlabels)  # num gts x X x Y x nlabels
 
             ged = utils.generalised_energy_distance(s_pred_arr, s_gt_arr_r,
                                                     nlabels=self.exp_config.nlabels - 1,

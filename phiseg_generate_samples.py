@@ -116,7 +116,7 @@ def main(model_path, exp_config):
             print('WARNING: skipping cases with no structures')
             continue
 
-        s_b_r = utils.convert_batch_to_onehot(s_b.transpose((2, 0, 1)), exp_config.nlabels)
+        s_b_r = utils.to_one_hot(s_b.transpose((2, 0, 1)), exp_config.nlabels)
 
         print('Plotting input image')
         plt.figure()

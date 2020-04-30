@@ -55,7 +55,7 @@ def main(model_path, exp_config, model_selection='latest'):
 
         # s_arr = np.squeeze(np.asarray(s_list)) # num samples x X x Y
         s_b_r = s_b.transpose((2, 0, 1))  # num gts x X x Y
-        s_b_r_sm = utils.convert_batch_to_onehot(s_b_r, exp_config.nlabels)  # num gts x X x Y x nlabels
+        s_b_r_sm = utils.to_one_hot(s_b_r, exp_config.nlabels)  # num gts x X x Y x nlabels
 
         ged = utils.generalised_energy_distance(s_arr, s_b_r, nlabels=exp_config.nlabels - 1,
                                                 label_range=range(1, exp_config.nlabels))
