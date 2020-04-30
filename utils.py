@@ -307,12 +307,8 @@ def generalised_energy_distance(sample_arr, gt_arr, nlabels, label_range):
 
     for i in range(N):
         for j in range(M):
-            # print(dist_fct(sample_arr[i,...], gt_arr[j,...]))
             d_sy.append(dist_fct(sample_arr[i, ...], gt_arr[j, ...], nlabels, label_range))
-
-    for i in range(N):
         for j in range(N):
-            # print(dist_fct(sample_arr[i,...], sample_arr[j,...]))
             d_ss.append(dist_fct(sample_arr[i, ...], sample_arr[j, ...], nlabels, label_range))
 
     for i in range(M):
