@@ -39,6 +39,7 @@ def report_dataframe(dataframe, num_classes=2, num_experts=4):
     report_array(np.array(dataframe['GED']), 'GED')
     report_array(np.array(dataframe['NCC']), 'NCC')
     report_array(np.array(dataframe['entropy']), 'entropy')
+    report_array(np.array(dataframe['diversity']), 'diversity')
 
     for c in range(1, num_classes):
         for e in range(num_experts):
@@ -49,12 +50,13 @@ def report_dataframe(dataframe, num_classes=2, num_experts=4):
             report_array(dsc, 'Alt_' + key)
 
 
-def make_dataframe(ged, ncc, dsc, entropy):
+def make_dataframe(ged, ncc, dsc, entropy, diversity):
     dsc = np.array(dsc)
     ged = np.array(ged)
     ncc = np.array(ncc)
     entropy = np.array(entropy)
-    data_dict = {'GED': ged, 'NCC': ncc, 'entropy': entropy}
+    diversity = np.array(diversity)
+    data_dict = {'GED': ged, 'NCC': ncc, 'entropy': entropy, 'diversity': diversity}
 
     for e in range(dsc.shape[1]):
         for c in range(dsc.shape[-1]):
@@ -70,8 +72,15 @@ def calc_dsc(image_0, image_1):
         return dc(image_1, image_0)
 
 
-def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False):
-    output_path = os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv')
+def get_output_path(model_path, num_samples, model_selection, mode):
+    if not mode:
+        return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv')
+    else:
+        return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}_mode.csv')
+
+
+def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
+    output_path = get_output_path(model_path, num_samples, model_selection, mode)
     if os.path.exists(output_path) and not overwrite:
         return pd.read_csv(output_path)
 
@@ -86,6 +95,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
     ged = []
     ncc = []
     entropy = []
+    diversity = []
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -100,26 +110,26 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
         samples = np.argmax(prob_maps, axis=-1)
         probability = np.mean(prob_maps, axis=0) + 1e-10
         entropy.append(float(np.sum(-probability * np.log(probability))))
-
-        if 'proposed' not in exp_config.experiment_name:
-            prediction = np.argmax(np.sum(prob_maps, axis=0), axis=-1)
+        if mode:
+            prediction = np.round(np.mean(np.argmax(prob_maps, axis=-1), axis=0)).astype(np.int64)
         else:
-            mean = phiseg_model.sess.run(phiseg_model.dist_eval.loc, feed_dict=feed_dict)[0]
-            mean = np.reshape(mean, image.shape[:-1] + (2,))
-            prediction = np.argmax(mean, axis=-1)
+            if 'proposed' not in exp_config.experiment_name:
+                prediction = np.argmax(np.sum(prob_maps, axis=0), axis=-1)
+            else:
+                mean = phiseg_model.sess.run(phiseg_model.dist_eval.loc, feed_dict=feed_dict)[0]
+                mean = np.reshape(mean, image.shape[:-1] + (2,))
+                prediction = np.argmax(mean, axis=-1)
 
         # calculate DSC per expert
         dsc.append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
+        diversity.append(utils.calc_diversity(prediction, samples, nlabels=exp_config.nlabels - 1,
+                                              label_range=range(1, exp_config.nlabels)))
 
-        if 'detunet' in exp_config.experiment_name:
-            ged.append(0.)
-            ncc.append(0.)
-        else:
-            targets_one_hot = utils.convert_batch_to_onehot(targets, exp_config.nlabels)
-            ged.append(utils.generalised_energy_distance(samples, targets, nlabels=exp_config.nlabels - 1,
-                                                         label_range=range(1, exp_config.nlabels)))
-            ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
-    dataframe = make_dataframe(ged, ncc, dsc, entropy)
+        targets_one_hot = utils.convert_batch_to_onehot(targets, exp_config.nlabels)
+        ged.append(utils.generalised_energy_distance(samples, targets, nlabels=exp_config.nlabels - 1,
+                                                     label_range=range(1, exp_config.nlabels)))
+        ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
+    dataframe = make_dataframe(ged, ncc, dsc, entropy, diversity)
     dataframe.to_csv(output_path, index=False)
     return dataframe
 
@@ -130,14 +140,12 @@ if __name__ == '__main__':
     parser.add_argument("--model-selection", type=str, help="model selection criterion", default='latest')
     parser.add_argument("--num-samples", type=int, help="number of samples for distribution evaluation", default=100)
     parser.add_argument("--overwrite", type=bool, help="overwrite previous results", default=False)
-
+    parser.add_argument("--mode", type=bool, help="whether to use mode as prediction", default=False)
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device
     model_selection = args.model_selection
     num_samples = args.num_samples
-    overwrite = args.overwrite
-
     base_exp_path = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs/lidc'
     base_config_path = 'phiseg/experiments'
 
@@ -157,11 +165,10 @@ if __name__ == '__main__':
         config_file = os.path.join(base_config_path, exp + '.py')
         config_module = config_file.split('/')[-1].rstrip('.py')
         exp_config = SourceFileLoader(config_module, os.path.join(config_file)).load_module()
-
-        dataframe = test(model_path, exp_config, model_selection, num_samples, overwrite)
+        dataframe = test(model_path, exp_config, model_selection, num_samples, args.overwrite, args.mode)
         print(exp)
         report_dataframe(dataframe, num_classes=2, num_experts=4)
 
     output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples)
-    output_dataframe.to_csv(
-        os.path.join(base_exp_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv'))
+    output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode)
+    output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
