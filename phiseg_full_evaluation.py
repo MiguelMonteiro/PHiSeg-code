@@ -81,6 +81,8 @@ def get_output_path(model_path, num_samples, model_selection, mode):
 
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
     output_path = get_output_path(model_path, num_samples, model_selection, mode)
+    print(output_path)
+    exit(1)
     if os.path.exists(output_path) and not overwrite:
         return pd.read_csv(output_path)
 
@@ -148,7 +150,7 @@ if __name__ == '__main__':
     num_samples = args.num_samples
     base_exp_path = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs/lidc'
     base_config_path = 'phiseg/experiments'
-
+    print(args.mode, args.overwrite)
     exps = ['detunet_1annot',
             'probunet_1annot',
             'phiseg_7_5_1annot',
