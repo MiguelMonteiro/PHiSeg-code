@@ -270,8 +270,6 @@ def dist_fct(m1, m2, nlabels, label_range):
         else:
             per_label_iou.append(jc(m1_bin, m2_bin))
 
-    # print(1-(sum(per_label_iou) / nlabels))
-
     return 1 - (sum(per_label_iou) / nlabels)
 
 

@@ -81,8 +81,6 @@ def get_output_path(model_path, num_samples, model_selection, mode):
 
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
     output_path = get_output_path(model_path, num_samples, model_selection, mode)
-    print(output_path)
-    exit(1)
     if os.path.exists(output_path) and not overwrite:
         return pd.read_csv(output_path)
 
@@ -124,12 +122,12 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
 
         # calculate DSC per expert
         dsc.append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
-        targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
-        # samples_one_hot = utils.to_one_hot(samples, exp_config.nlabels)
-        #ged_, diversity_ = utils.vectorized_generalised_energy_distance(samples_one_hot, targets_one_hot)
+        # ged and diversity
         ged_, diversity_ = utils.generalised_energy_distance(samples, targets, exp_config.nlabels - 1, range(1, exp_config.nlabels))
         ged.append(ged_)
         diversity.append(diversity_)
+        # NCC
+        targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
         ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
     dataframe = make_dataframe(ged, ncc, dsc, entropy, diversity)
     dataframe.to_csv(output_path, index=False)
@@ -150,7 +148,6 @@ if __name__ == '__main__':
     num_samples = args.num_samples
     base_exp_path = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs/lidc'
     base_config_path = 'phiseg/experiments'
-    print(args.mode, args.overwrite)
     exps = ['detunet_1annot',
             'probunet_1annot',
             'phiseg_7_5_1annot',
