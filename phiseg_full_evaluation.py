@@ -11,6 +11,7 @@ from phiseg.phiseg_model import phiseg
 from phiseg.model_zoo import likelihoods
 from data.data_switch import data_switch
 import logging
+import SimpleITK as sitk
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -79,11 +80,37 @@ def get_output_path(model_path, num_samples, model_selection, mode):
         return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}_mode.csv')
 
 
+class ImageSaver(object):
+    def __init__(self, output_path, samples_to_keep=20):
+        self.output_path = output_path
+        self.samples_to_keep = samples_to_keep
+        self.df = pd.DataFrame()
+
+    def save_image(self, image, id_, name, dtype):
+        path = os.path.join(self.output_path, id_ + name + '.nii.gz')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        sitk.WriteImage(sitk.GetImageFromArray(image.astype(dtype)), path)
+        return path
+
+    def __call__(self, id_, image, targets, prediction, samples):
+        self.df.loc[id_, 'image'] = self.save_image(image, id_, 'image', np.float32)
+        for i, target in enumerate(targets):
+            self.df.loc[id_, f'target_{i:d}'] = self.save_image(target, id_, f'target_{i:d}.nii.gz', np.uint8)
+
+        self.df.loc[id_, 'image'] = self.save_image(prediction, id_, 'prediction.nii.gz', np.float32)
+        samples_to_keep = min(self.samples_to_keep, len(samples))
+        for i, sample in enumerate(samples[:samples_to_keep]):
+            self.df.loc[id_, f'sample_{i:d}'] = self.save_image(sample, id_, f'sample_{i:d}.nii.gz', np.uint8)
+
+    def close(self):
+        self.df.to_csv(os.path.join(output_path, 'sampling.csv'), index=False)
+
+
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
     output_path = get_output_path(model_path, num_samples, model_selection, mode)
     if os.path.exists(output_path) and not overwrite:
         return pd.read_csv(output_path)
-
+    image_saver = ImageSaver(os.path.join(model_path, 'samples'))
     tf.reset_default_graph()
     phiseg_model = phiseg(exp_config=exp_config)
     phiseg_model.load_weights(model_path, type=model_selection)
@@ -123,14 +150,18 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
         # calculate DSC per expert
         dsc.append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
         # ged and diversity
-        ged_, diversity_ = utils.generalised_energy_distance(samples, targets, exp_config.nlabels - 1, range(1, exp_config.nlabels))
+        ged_, diversity_ = utils.generalised_energy_distance(samples, targets, exp_config.nlabels - 1,
+                                                             range(1, exp_config.nlabels))
         ged.append(ged_)
         diversity.append(diversity_)
         # NCC
         targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
         ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
+        image_saver(str(ii) + '/', image[0,..., 0], targets, prediction, samples)
+
     dataframe = make_dataframe(ged, ncc, dsc, entropy, diversity)
     dataframe.to_csv(output_path, index=False)
+    image_saver.close()
     return dataframe
 
 
