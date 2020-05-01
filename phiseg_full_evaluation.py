@@ -103,7 +103,7 @@ class ImageSaver(object):
             self.df.loc[id_, f'sample_{i:d}'] = self.save_image(sample, id_, f'sample_{i:d}.nii.gz', np.uint8)
 
     def close(self):
-        self.df.to_csv(os.path.join(output_path, 'sampling.csv'), index=False)
+        self.df.to_csv(os.path.join(self.output_path, 'sampling.csv'), index=False)
 
 
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
