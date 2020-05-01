@@ -15,10 +15,10 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
-def summarize_results(base_exp_path, exps, model_selection='latest', num_samples=100):
+def summarize_results(base_exp_path, exps, model_selection='latest', num_samples=100, mode=False):
     output_dataframe = pd.DataFrame(index=exps)
     for exp in exps:
-        csv_path = os.path.join(base_exp_path, exp, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv')
+        csv_path = get_output_path(os.path.join(base_exp_path, exp), num_samples, model_selection, mode)
         results = pd.read_csv(csv_path)
         for column in results.columns:
             if 'DSC' in column:
@@ -169,6 +169,6 @@ if __name__ == '__main__':
         print(exp)
         report_dataframe(dataframe, num_classes=2, num_experts=4)
 
-    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples)
+    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples, args.mode)
     output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode)
     output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
