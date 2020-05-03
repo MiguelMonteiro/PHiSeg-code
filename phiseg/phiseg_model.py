@@ -8,6 +8,7 @@ from medpy.metric import dc
 from config import system as sys_config
 import logging
 import math
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
@@ -66,7 +67,9 @@ class phiseg():
             latent_levels=exp_config.latent_levels,
             norm=exp_config.layer_norm
         )
+        is_proposed = hasattr(self.exp_config, 'is_proposed')
 
+        extra_kwargs = {'rank': exp_config.rank, 'diagonal': exp_config.diagonal} if is_proposed else {}
         self.s_out_list = self.exp_config.likelihood(self.z_list,
                                                      self.training_pl,
                                                      n0=exp_config.n0,
@@ -75,7 +78,8 @@ class phiseg():
                                                      latent_levels=exp_config.latent_levels,
                                                      image_size=exp_config.image_size,
                                                      norm=exp_config.layer_norm,
-                                                     x=self.x_inp)  # This is only needed for probUNET!
+                                                     x=self.x_inp,  # This is only needed for probUNET!
+                                                     **extra_kwargs)
 
         self.s_out_eval_list = self.exp_config.likelihood(self.prior_z_list_gen,
                                                           self.training_pl,
@@ -86,9 +90,9 @@ class phiseg():
                                                           latent_levels=exp_config.latent_levels,
                                                           image_size=exp_config.image_size,
                                                           norm=exp_config.layer_norm,
-                                                          x=self.x_inp)  # This is only needed for probUNET!
+                                                          x=self.x_inp,  # This is only needed for probUNET!
+                                                          **extra_kwargs)
 
-        is_proposed = hasattr(self.exp_config, 'is_proposed')
         if is_proposed:
             self.dist_train = self.s_out_list[1]
             self.s_out_list = self.s_out_list[0]
@@ -243,9 +247,9 @@ class phiseg():
         mc_samples = self.exp_config.mc_samples
         shape = tuple(labels.shape[1:])
         dist = self.dist_train
-        logit_samples = dist.rsample((mc_samples, ))
+        logit_samples = dist.rsample((mc_samples,))
         logit_samples = tf.reshape(logit_samples, (mc_samples, -1) + shape)
-        labels = tf.tile(tf.expand_dims(labels, axis=0), (mc_samples, ) + (1, ) * len(labels.shape))
+        labels = tf.tile(tf.expand_dims(labels, axis=0), (mc_samples,) + (1,) * len(labels.shape))
         log_prob = -tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logit_samples, dim=-1)
         log_prob = tf.reduce_sum(tf.reshape(log_prob, (mc_samples, -1, np.prod(shape[:-1]))), axis=-1)
         loglikelihood = tf.reduce_mean(tf.reduce_logsumexp(log_prob, axis=0) - math.log(mc_samples))
@@ -356,10 +360,10 @@ class phiseg():
         feed_dict[self.x_inp] = x_in
 
         mean = self.sess.run(self.dist_eval.loc, feed_dict=feed_dict)
-        mean = np.reshape(mean, x_in.shape[:-1] + (2, ))
+        mean = np.reshape(mean, x_in.shape[:-1] + (2,))
         prediction = np.argmax(mean, axis=-1)
         if return_softmax:
-            return prediction, 1 #softmax(mean)
+            return prediction, 1  # softmax(mean)
 
         return prediction
 

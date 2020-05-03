@@ -53,7 +53,8 @@ class DiagonalMultivariateNormal(object):
         return (self.loc + tf.sqrt(self.cov_diag) * eps_D)
 
 
-def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tfnorm.batch_norm, **kwargs):
+def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tfnorm.batch_norm, rank=10,
+             diagonal=False, **kwargs):
     x = kwargs.get('x')
 
     resolution_levels = kwargs.get('resolution_levels', 7)
@@ -128,9 +129,7 @@ def proposed(z_list, training, image_size, n_classes, scope_reuse=False, norm=tf
         recomb = conv_unit(recomb, 'recomb_2', num_filters=num_channels[0], kernel_size=(1, 1), training=training,
                            normalisation=norm, add_bias=add_bias)
 
-        rank = kwargs.get('rank', 10)
-        epsilon = kwargs.get('epsilon', 1e-5)
-        diagonal = kwargs.get('diagonal', False)
+        epsilon = 1e-5
 
         mean = layers.conv2D(recomb, 'mean', num_filters=n_classes, kernel_size=(1, 1), activation=tf.identity)
         log_cov_diag = layers.conv2D(recomb, 'diag', num_filters=n_classes, kernel_size=(1, 1), activation=tf.identity)
