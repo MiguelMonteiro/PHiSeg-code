@@ -617,7 +617,7 @@ class phiseg():
 
             ged = utils.generalised_energy_distance(s_pred_arr, s_gt_arr_r,
                                                     nlabels=self.exp_config.nlabels - 1,
-                                                    label_range=range(1, self.exp_config.nlabels))
+                                                    label_range=range(1, self.exp_config.nlabels))[0]
 
             ncc = utils.variance_ncc_dist(s_pred_sm_arr, s_gt_arr_r_sm)
 
