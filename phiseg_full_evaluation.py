@@ -59,7 +59,7 @@ def make_dataframe(metrics):
     presence = data_dict['presence']
     for e in range(dsc.shape[1]):
         for c in range(dsc.shape[-1]):
-            data_dict.update({f'DSC_c_{c:d}_e_{e:d}': dsc[:, e, c]})
+            data_dict.update({f'dsc_c_{c:d}_e_{e:d}': dsc[:, e, c]})
             data_dict.update({f'presence_c_{c:d}_e_{e:d}': presence[:, e, c]})
     data_dict.pop('dsc')
     data_dict.pop('presence')
