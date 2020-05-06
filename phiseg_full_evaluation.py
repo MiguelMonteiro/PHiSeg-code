@@ -22,7 +22,7 @@ def summarize_results(base_exp_path, exps, model_selection='latest', num_samples
         csv_path = get_output_path(os.path.join(base_exp_path, exp), num_samples, model_selection, mode)
         results = pd.read_csv(csv_path)
         for column in results.columns:
-            if 'DSC' in column:
+            if 'dsc' in column:
                 alt_dsc = np.array(results[column])
                 alt_dsc[np.isnan(alt_dsc)] = 1.
                 results[column + '_alt'] = alt_dsc
@@ -37,18 +37,18 @@ def report_array(array, name):
 
 
 def report_dataframe(dataframe, num_classes=2, num_experts=4):
-    report_array(np.array(dataframe['GED']), 'GED')
-    report_array(np.array(dataframe['NCC']), 'NCC')
+    report_array(np.array(dataframe['ged']), 'ged')
+    report_array(np.array(dataframe['ncc']), 'ncc')
     report_array(np.array(dataframe['entropy']), 'entropy')
     report_array(np.array(dataframe['diversity']), 'diversity')
 
     for c in range(1, num_classes):
         for e in range(num_experts):
             key = f'_c_{c:d}_e_{e:d}'
-            dsc = dataframe['DSC' + key]
+            dsc = dataframe['dsc' + key]
             presence = dataframe['presence' + key]
-            report_array(dsc, 'DSC' + key)
-            report_array(dsc[presence], 'DSC where lesion' + key)
+            report_array(dsc, 'dsc' + key)
+            report_array(dsc[presence], 'dsc where lesion' + key)
             dsc[np.isnan(dsc)] = 1.
             report_array(dsc, 'Alt_' + key)
 
