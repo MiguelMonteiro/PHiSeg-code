@@ -33,7 +33,7 @@ def summarize_results(base_exp_path, exps, model_selection='latest', num_samples
 
 
 def report_array(array, name):
-    print(f'{name:s}:\t\t{np.mean(array):.6f} +- {np.std(array):.6f}')
+    print(f'{name:s}:\n{np.mean(array):.6f} +- {np.std(array):.6f}')
 
 
 def report_dataframe(dataframe, num_classes=2, num_experts=4):
@@ -44,25 +44,25 @@ def report_dataframe(dataframe, num_classes=2, num_experts=4):
 
     for c in range(1, num_classes):
         for e in range(num_experts):
-            key = f'DSC_c_{c:d}_e_{e:d}'
-            dsc = dataframe[key]
-            report_array(dsc, key)
+            key = f'_c_{c:d}_e_{e:d}'
+            dsc = dataframe['DSC' + key]
+            presence = dataframe['presence' + key]
+            report_array(dsc, 'DSC' + key)
+            report_array(dsc[presence], 'DSC where lesion' + key)
             dsc[np.isnan(dsc)] = 1.
             report_array(dsc, 'Alt_' + key)
 
 
-def make_dataframe(ged, ncc, dsc, entropy, diversity):
-    dsc = np.array(dsc)
-    ged = np.array(ged)
-    ncc = np.array(ncc)
-    entropy = np.array(entropy)
-    diversity = np.array(diversity)
-    data_dict = {'GED': ged, 'NCC': ncc, 'entropy': entropy, 'diversity': diversity}
-
+def make_dataframe(metrics):
+    data_dict = {key: np.array(metric) for key, metric in metrics.items()}
+    dsc = data_dict['dsc']
+    presence = data_dict['presence']
     for e in range(dsc.shape[1]):
         for c in range(dsc.shape[-1]):
             data_dict.update({f'DSC_c_{c:d}_e_{e:d}': dsc[:, e, c]})
-
+            data_dict.update({f'presence_c_{c:d}_e_{e:d}': presence[:, e, c]})
+    data_dict.pop('dsc')
+    data_dict.pop('presence')
     return pd.DataFrame(data_dict)
 
 
@@ -118,11 +118,8 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
 
-    dsc = []
-    ged = []
-    ncc = []
-    entropy = []
-    diversity = []
+    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity']}
+
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -136,7 +133,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
         prob_maps = phiseg_model.sess.run(phiseg_model.s_out_eval_sm, feed_dict=feed_dict)
         samples = np.argmax(prob_maps, axis=-1)
         probability = np.mean(prob_maps, axis=0) + 1e-10
-        entropy.append(float(np.sum(-probability * np.log(probability))))
+        metrics['entropy'].append(float(np.sum(-probability * np.log(probability))))
         if mode:
             prediction = np.round(np.mean(np.argmax(prob_maps, axis=-1), axis=0)).astype(np.int64)
         else:
@@ -148,18 +145,20 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
                 prediction = np.argmax(mean, axis=-1)
 
         # calculate DSC per expert
-        dsc.append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
+        metrics['dsc'].append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
+        metrics['presence'].append([[np.any(target == i) for i in range(exp_config.nlabels)] for target in targets])
+
         # ged and diversity
         ged_, diversity_ = utils.generalised_energy_distance(samples, targets, exp_config.nlabels - 1,
                                                              range(1, exp_config.nlabels))
-        ged.append(ged_)
-        diversity.append(diversity_)
+        metrics['ged'].append(ged_)
+        metrics['diversity'].append(diversity_)
         # NCC
         targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
-        ncc.append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
+        metrics['ncc'].append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
         image_saver(str(ii) + '/', image[0,..., 0], targets, prediction, samples)
 
-    dataframe = make_dataframe(ged, ncc, dsc, entropy, diversity)
+    dataframe = make_dataframe(metrics)
     dataframe.to_csv(output_path, index=False)
     image_saver.close()
     return dataframe
