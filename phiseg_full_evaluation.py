@@ -12,23 +12,51 @@ from phiseg.model_zoo import likelihoods
 from data.data_switch import data_switch
 import logging
 import SimpleITK as sitk
+import math
+import pickle
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
-def summarize_results(base_exp_path, exps, model_selection='latest', num_samples=100, mode=False):
+def nanstderr(array):
+    return np.nanstd(array) / np.sqrt(np.sum(np.logical_not(np.isnan(array))))
+
+
+def summarize_results(base_exp_path, exps, num_classes=2, num_experts=4, model_selection='latest', num_samples=100,
+                      mode=False):
     output_dataframe = pd.DataFrame(index=exps)
     for exp in exps:
         csv_path = get_output_path(os.path.join(base_exp_path, exp), num_samples, model_selection, mode)
         results = pd.read_csv(csv_path)
+        results['normalised_entropy'] = results['entropy'] / (128 ** 2 * math.log(num_classes))
         for column in results.columns:
-            if 'dsc' in column:
-                alt_dsc = np.array(results[column])
-                alt_dsc[np.isnan(alt_dsc)] = 1.
-                results[column + '_alt'] = alt_dsc
-        for column in results.columns:
-            output_dataframe.loc[exp, column + '_mean'] = np.nanmean(results[column])
-            output_dataframe.loc[exp, column + '_std'] = np.nanstd(results[column])
+            if 'dsc' not in column and 'presence' not in column:
+                output_dataframe.loc[exp, column + '_mean'] = np.nanmean(results[column])
+                output_dataframe.loc[exp, column + '_stderr'] = nanstderr(results[column])
+
+        for c in range(1, num_classes):
+            dsc = []
+            positives = []
+            # after looking at the data sets are no in fact per expert as there are far more than 4 experts so it makes
+            # sense to aggregate
+            for e in range(num_experts):
+                key = f'_c_{c:d}_e_{e:d}'
+                dsc.append(results['dsc' + key])
+                positives.append(results['presence' + key])
+            dsc = np.concatenate(dsc)
+            positives = np.concatenate(positives)
+            negatives = np.logical_not(positives)
+            false_positives = np.logical_and(dsc == 0., negatives)
+            false_negatives = np.logical_and(dsc == 0., positives)
+            output_dataframe.loc[exp, f'dsc_c_{c:d}_mean'] = np.nanmean(dsc)
+            output_dataframe.loc[exp, f'dsc_c_{c:d}_stderr'] = nanstderr(dsc)
+            output_dataframe.loc[exp, f'dsc_c_{c:d}_where_lesion_mean'] = np.nanmean(dsc[positives])
+            output_dataframe.loc[exp, f'dsc_c_{c:d}_where_lesion_stderr'] = nanstderr(dsc[positives])
+            output_dataframe.loc[exp, f'fpr_c_{c:d}'] = np.sum(false_positives) / np.sum(negatives)
+            output_dataframe.loc[exp, f'fnr_c_{c:d}'] = np.sum(false_negatives) / np.sum(positives)
+            output_dataframe.loc[exp, f'positives_c_{c:d}'] = np.sum(positives)
+            output_dataframe.loc[exp, f'negatives_c_{c:d}'] = np.sum(negatives)
+
     return output_dataframe
 
 
@@ -75,9 +103,9 @@ def calc_dsc(image_0, image_1):
 
 def get_output_path(model_path, num_samples, model_selection, mode):
     if not mode:
-        return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}.csv')
+        return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}')
     else:
-        return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}_mode.csv')
+        return os.path.join(model_path, f'test_results_{num_samples:d}_samples_{model_selection:s}_mode')
 
 
 class ImageSaver(object):
@@ -106,10 +134,23 @@ class ImageSaver(object):
         self.df.to_csv(os.path.join(self.output_path, 'sampling.csv'), index=False)
 
 
+def calculate_expert_diversity(exp_config):
+    data_loader = data_switch(exp_config.data_identifier)
+    data = data_loader(exp_config)
+    diversity = []
+    for ii in tqdm(range(data.test.images.shape[0])):
+        targets = data.test.labels[ii, ...].transpose((2, 0, 1))
+        ged_, diversity_ = utils.generalised_energy_distance(targets, targets, exp_config.nlabels - 1,
+                                                             range(1, exp_config.nlabels))
+        diversity.append(diversity_)
+    diversity = np.array(diversity)
+    print(f'{np.mean(diversity):.6f} +- {nanstderr(diversity):.6f}')
+
+
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
-    output_path = get_output_path(model_path, num_samples, model_selection, mode)
+    output_path = get_output_path(model_path, num_samples, model_selection, mode) + '.pickle'
     if os.path.exists(output_path) and not overwrite:
-        return pd.read_csv(output_path)
+        return
     image_saver = ImageSaver(os.path.join(model_path, 'samples'))
     tf.reset_default_graph()
     phiseg_model = phiseg(exp_config=exp_config)
@@ -118,8 +159,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
 
-    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity']}
-
+    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc']}
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -145,8 +185,12 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
                 prediction = np.argmax(mean, axis=-1)
 
         # calculate DSC per expert
-        metrics['dsc'].append([[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
+        metrics['dsc'].append(
+            [[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
         metrics['presence'].append([[np.any(target == i) for i in range(exp_config.nlabels)] for target in targets])
+
+        metrics['sample_dsc'].append([[[calc_dsc(target == i, sample == i) for i in range(exp_config.nlabels)]
+                                       for target in targets] for sample in samples])
 
         # ged and diversity
         ged_, diversity_ = utils.generalised_energy_distance(samples, targets, exp_config.nlabels - 1,
@@ -156,12 +200,12 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
         # NCC
         targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
         metrics['ncc'].append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
-        image_saver(str(ii) + '/', image[0,..., 0], targets, prediction, samples)
+        image_saver(str(ii) + '/', image[0, ..., 0], targets, prediction, samples)
 
-    dataframe = make_dataframe(metrics)
-    dataframe.to_csv(output_path, index=False)
+    metrics = {key: np.array(metric) for key, metric in metrics.items()}
+    with open(output_path, 'wb') as f:
+        pickle.dump(metrics, f)
     image_saver.close()
-    return dataframe
 
 
 if __name__ == '__main__':
@@ -171,9 +215,14 @@ if __name__ == '__main__':
     parser.add_argument("--num-samples", type=int, help="number of samples for distribution evaluation", default=100)
     parser.add_argument("--overwrite", type=bool, help="overwrite previous results", default=False)
     parser.add_argument("--mode", type=bool, help="whether to use mode as prediction", default=False)
+    parser.add_argument("--seed", type=int, help="random seed", default=10)
+
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device
+    np.random.seed(args.seed)
+    tf.random.set_random_seed(args.seed)
+
     model_selection = args.model_selection
     num_samples = args.num_samples
     base_exp_path = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs/lidc'
@@ -189,15 +238,17 @@ if __name__ == '__main__':
             'proposed_diag_4annot',
             'proposed_4annot']
 
-    for exp in exps:
+    for i, exp in enumerate(exps):
         model_path = os.path.join(base_exp_path, exp)
         config_file = os.path.join(base_config_path, exp + '.py')
         config_module = config_file.split('/')[-1].rstrip('.py')
         exp_config = SourceFileLoader(config_module, os.path.join(config_file)).load_module()
-        dataframe = test(model_path, exp_config, model_selection, num_samples, args.overwrite, args.mode)
-        print(exp)
-        report_dataframe(dataframe, num_classes=2, num_experts=4)
+        if i == 0:
+            calculate_expert_diversity(exp_config)
+        test(model_path, exp_config, model_selection, num_samples, args.overwrite, args.mode)
 
-    output_dataframe = summarize_results(base_exp_path, exps, model_selection, num_samples, args.mode)
-    output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode)
-    output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
+
+    # output_dataframe = summarize_results(base_exp_path, exps, 2, 4, model_selection, num_samples, args.mode)
+    # output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode) + '.csv'
+    # output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
+
