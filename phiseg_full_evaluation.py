@@ -22,41 +22,45 @@ def nanstderr(array):
     return np.nanstd(array) / np.sqrt(np.sum(np.logical_not(np.isnan(array))))
 
 
-def summarize_results(base_exp_path, exps, num_classes=2, num_experts=4, model_selection='latest', num_samples=100,
-                      mode=False):
+def update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results, num_classes):
+    exp_results['normalised_entropy'] = exp_results['entropy'] / (128 ** 2 * math.log(num_classes))
+
+    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy']:
+        output_dataframe.loc[exp, column + '_mean'] = np.nanmean(exp_results[column])
+        output_dataframe.loc[exp, column + '_stderr'] = nanstderr(exp_results[column])
+
+    for c in range(1, num_classes):
+        # after looking at the data sets are no in fact per expert as there are far more than 4 experts so it makes
+        # sense to aggregate
+        dsc = np.concatenate(exp_results['dsc'][..., c])
+        positives = np.concatenate(exp_results['presence'][..., c])
+        negatives = np.logical_not(positives)
+        false_positives = np.logical_and(dsc == 0., negatives)
+        false_negatives = np.logical_and(dsc == 0., positives)
+        output_dataframe.loc[exp, f'dsc_c_{c:d}_mean'] = np.nanmean(dsc)
+        output_dataframe.loc[exp, f'dsc_c_{c:d}_stderr'] = nanstderr(dsc)
+        output_dataframe.loc[exp, f'dsc_c_{c:d}_where_lesion_mean'] = np.nanmean(dsc[positives])
+        output_dataframe.loc[exp, f'dsc_c_{c:d}_where_lesion_stderr'] = nanstderr(dsc[positives])
+        output_dataframe.loc[exp, f'fpr_c_{c:d}'] = np.sum(false_positives) / np.sum(negatives)
+        output_dataframe.loc[exp, f'fnr_c_{c:d}'] = np.sum(false_negatives) / np.sum(positives)
+        output_dataframe.loc[exp, f'positives_c_{c:d}'] = np.sum(positives)
+        output_dataframe.loc[exp, f'negatives_c_{c:d}'] = np.sum(negatives)
+    sample_gain = (exp_results['sample_dsc'] - np.expand_dims(det_exp_results['dsc'], 1))[..., 1:]
+    output_dataframe.loc[exp, f'median_gain_mean'] = np.nanmean(np.nanmedian(sample_gain, axis=1))
+    return output_dataframe
+
+
+def summarize_results(base_exp_path, exps, num_classes=2, model_selection='latest', num_samples=100, mode=False):
     output_dataframe = pd.DataFrame(index=exps)
     for exp in exps:
-        csv_path = get_output_path(os.path.join(base_exp_path, exp), num_samples, model_selection, mode)
-        results = pd.read_csv(csv_path)
-        results['normalised_entropy'] = results['entropy'] / (128 ** 2 * math.log(num_classes))
-        for column in results.columns:
-            if 'dsc' not in column and 'presence' not in column:
-                output_dataframe.loc[exp, column + '_mean'] = np.nanmean(results[column])
-                output_dataframe.loc[exp, column + '_stderr'] = nanstderr(results[column])
-
-        for c in range(1, num_classes):
-            dsc = []
-            positives = []
-            # after looking at the data sets are no in fact per expert as there are far more than 4 experts so it makes
-            # sense to aggregate
-            for e in range(num_experts):
-                key = f'_c_{c:d}_e_{e:d}'
-                dsc.append(results['dsc' + key])
-                positives.append(results['presence' + key])
-            dsc = np.concatenate(dsc)
-            positives = np.concatenate(positives)
-            negatives = np.logical_not(positives)
-            false_positives = np.logical_and(dsc == 0., negatives)
-            false_negatives = np.logical_and(dsc == 0., positives)
-            output_dataframe.loc[exp, f'dsc_c_{c:d}_mean'] = np.nanmean(dsc)
-            output_dataframe.loc[exp, f'dsc_c_{c:d}_stderr'] = nanstderr(dsc)
-            output_dataframe.loc[exp, f'dsc_c_{c:d}_where_lesion_mean'] = np.nanmean(dsc[positives])
-            output_dataframe.loc[exp, f'dsc_c_{c:d}_where_lesion_stderr'] = nanstderr(dsc[positives])
-            output_dataframe.loc[exp, f'fpr_c_{c:d}'] = np.sum(false_positives) / np.sum(negatives)
-            output_dataframe.loc[exp, f'fnr_c_{c:d}'] = np.sum(false_negatives) / np.sum(positives)
-            output_dataframe.loc[exp, f'positives_c_{c:d}'] = np.sum(positives)
-            output_dataframe.loc[exp, f'negatives_c_{c:d}'] = np.sum(negatives)
-
+        exp_path = get_output_path(os.path.join(base_exp_path, exp), num_samples, model_selection, mode) + '.pickle'
+        with open(exp_path, 'rb') as f:
+            exp_results = pickle.load(f)
+        det = 0 if '1annot' in exp else 5
+        det_exp_path = get_output_path(os.path.join(base_exp_path, exps[det]), num_samples, model_selection, mode) + '.pickle'
+        with open(det_exp_path, 'rb') as f:
+            det_exp_results = pickle.load(f)
+        output_dataframe = update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results, num_classes)
     return output_dataframe
 
 
@@ -147,6 +151,31 @@ def calculate_expert_diversity(exp_config):
     print(f'{np.mean(diversity):.6f} +- {nanstderr(diversity):.6f}')
 
 
+def calc_expected_calibration_error(targets, prediction, prob_map, num_bins):
+    bins = np.linspace(0, 1, num_bins + 1)
+    error_map = (targets != prediction).astype(np.uint8)
+    marginal_confidence = np.max(prob_map, axis=-1)
+    assert np.all(np.logical_and(marginal_confidence >= 0, marginal_confidence <= 1.))
+    errors = []
+    total = []
+    confidence = []
+    for j in range(len(bins) - 1):
+        start = bins[j]
+        end = bins[j + 1] + 1 if j == len(bins) - 2 else bins[j + 1]
+        ind = np.logical_and(marginal_confidence >= start, marginal_confidence < end)
+        errors.append(np.sum(error_map[:, ind], axis=1))
+        total.append(np.sum(ind))
+        confidence.append(np.mean(marginal_confidence[ind]))
+
+    errors = np.array(errors)
+    confidence = np.array(confidence)
+    total = np.array(total)
+    accuracy = 1. - (errors / np.expand_dims(total, -1))
+    accuracy = np.nanmean(accuracy, axis=-1)
+    ece = np.nansum(np.abs(accuracy - confidence) * total) / np.nansum(total)
+    return ece
+
+
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
     output_path = get_output_path(model_path, num_samples, model_selection, mode) + '.pickle'
     if os.path.exists(output_path) and not overwrite:
@@ -159,7 +188,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
 
-    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc']}
+    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc', 'ece']}
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -200,6 +229,8 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
         # NCC
         targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
         metrics['ncc'].append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
+        prob_map = np.mean(prob_maps, axis=0)
+        metrics['ece'].append(calc_expected_calibration_error(targets, prediction, prob_map, 10))
         image_saver(str(ii) + '/', image[0, ..., 0], targets, prediction, samples)
 
     metrics = {key: np.array(metric) for key, metric in metrics.items()}
@@ -248,7 +279,7 @@ if __name__ == '__main__':
         test(model_path, exp_config, model_selection, num_samples, args.overwrite, args.mode)
 
 
-    # output_dataframe = summarize_results(base_exp_path, exps, 2, 4, model_selection, num_samples, args.mode)
+    output_dataframe = summarize_results(base_exp_path, exps, 2, model_selection, num_samples, args.mode)
     # output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode) + '.csv'
     # output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
 
