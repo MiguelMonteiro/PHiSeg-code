@@ -25,7 +25,7 @@ def nanstderr(array):
 def update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results, num_classes):
     exp_results['normalised_entropy'] = exp_results['entropy'] / (128 ** 2 * math.log(num_classes))
 
-    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy']:
+    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy', 'ece', 'unweighted_ece']:
         output_dataframe.loc[exp, column + '_mean'] = np.nanmean(exp_results[column])
         output_dataframe.loc[exp, column + '_stderr'] = nanstderr(exp_results[column])
 
@@ -151,29 +151,27 @@ def calculate_expert_diversity(exp_config):
     print(f'{np.mean(diversity):.6f} +- {nanstderr(diversity):.6f}')
 
 
-def calc_expected_calibration_error(targets, prediction, prob_map, num_bins):
+def calc_class_wise_expected_calibration_error(targets, prob_map, num_classes, num_bins):
     bins = np.linspace(0, 1, num_bins + 1)
-    error_map = (targets != prediction).astype(np.uint8)
-    marginal_confidence = np.max(prob_map, axis=-1)
-    assert np.all(np.logical_and(marginal_confidence >= 0, marginal_confidence <= 1.))
-    errors = []
+    prob_map = np.transpose(prob_map, axes=(-1, ) + tuple(range(len(prob_map.shape) -1)))
+    class_proportions = []
     total = []
     confidence = []
     for j in range(len(bins) - 1):
         start = bins[j]
         end = bins[j + 1] + 1 if j == len(bins) - 2 else bins[j + 1]
-        ind = np.logical_and(marginal_confidence >= start, marginal_confidence < end)
-        errors.append(np.sum(error_map[:, ind], axis=1))
-        total.append(np.sum(ind))
-        confidence.append(np.mean(marginal_confidence[ind]))
+        ind = np.logical_and(prob_map >= start, prob_map < end)
+        confidence.append(np.stack([np.nanmean(prob_map[c, ind[c]]) for c in range(num_classes)]))
+        total.append(np.sum(ind, axis=(-1, -2)))
+        class_incidence = np.stack([np.logical_and(targets == c, ind[c]) for c in range(num_classes)])
+        class_proportions.append(np.sum(class_incidence, axis=(-1, -2)))
 
-    errors = np.array(errors)
     confidence = np.array(confidence)
     total = np.array(total)
-    accuracy = 1. - (errors / np.expand_dims(total, -1))
-    accuracy = np.nanmean(accuracy, axis=-1)
-    ece = np.nansum(np.abs(accuracy - confidence) * total) / np.nansum(total)
-    return ece
+    class_proportions = np.nanmean(np.array(class_proportions) / np.expand_dims(total, -1), axis=-1)
+    ece = np.nansum(np.abs(confidence - class_proportions) * total, axis=0) / np.nansum(total, axis=0)
+    unweighted_ece = np.nanmean(np.abs(confidence - class_proportions), axis=0)
+    return ece, unweighted_ece
 
 
 def test(model_path, exp_config, model_selection='latest', num_samples=100, overwrite=False, mode=False):
@@ -188,7 +186,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
 
-    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc', 'ece']}
+    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc', 'ece', 'unweighted_ece']}
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -230,7 +228,9 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
         targets_one_hot = utils.to_one_hot(targets, exp_config.nlabels)
         metrics['ncc'].append(utils.variance_ncc_dist(prob_maps, targets_one_hot)[0])
         prob_map = np.mean(prob_maps, axis=0)
-        metrics['ece'].append(calc_expected_calibration_error(targets, prediction, prob_map, 10))
+        ece, unweighted_ece = calc_class_wise_expected_calibration_error(targets, prob_map, 2, 10)
+        metrics['ece'].append(ece)
+        metrics['unweighted_ece'].append(unweighted_ece)
         image_saver(str(ii) + '/', image[0, ..., 0], targets, prediction, samples)
 
     metrics = {key: np.array(metric) for key, metric in metrics.items()}
@@ -280,6 +280,6 @@ if __name__ == '__main__':
 
 
     output_dataframe = summarize_results(base_exp_path, exps, 2, model_selection, num_samples, args.mode)
-    # output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode) + '.csv'
-    # output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
+    output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode) + '.csv'
+    output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
 
