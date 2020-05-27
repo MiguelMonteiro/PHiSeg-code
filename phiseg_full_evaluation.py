@@ -14,6 +14,7 @@ import logging
 import SimpleITK as sitk
 import math
 import pickle
+from scipy.misc import logsumexp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -25,7 +26,8 @@ def nanstderr(array):
 def update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results, num_classes):
     exp_results['normalised_entropy'] = exp_results['entropy'] / (128 ** 2 * math.log(num_classes))
 
-    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy', 'ece', 'unweighted_ece']:
+    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy', 'ece', 'unweighted_ece',
+                   'loglikelihood']:
         output_dataframe.loc[exp, column + '_mean'] = np.nanmean(exp_results[column])
         output_dataframe.loc[exp, column + '_stderr'] = nanstderr(exp_results[column])
 
@@ -57,7 +59,8 @@ def summarize_results(base_exp_path, exps, num_classes=2, model_selection='lates
         with open(exp_path, 'rb') as f:
             exp_results = pickle.load(f)
         det = 0 if '1annot' in exp else 5
-        det_exp_path = get_output_path(os.path.join(base_exp_path, exps[det]), num_samples, model_selection, mode) + '.pickle'
+        det_exp_path = get_output_path(os.path.join(base_exp_path, exps[det]), num_samples, model_selection,
+                                       mode) + '.pickle'
         with open(det_exp_path, 'rb') as f:
             det_exp_results = pickle.load(f)
         output_dataframe = update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results, num_classes)
@@ -138,6 +141,13 @@ class ImageSaver(object):
         self.df.to_csv(os.path.join(self.output_path, 'sampling.csv'), index=False)
 
 
+def calculate_log_likelihood(targets, sample_prob_maps):
+    m = sample_prob_maps.shape[0]
+    targets = np.expand_dims(np.stack((targets, np.logical_not(targets)), -1), 1)
+    sample_prob_maps = np.expand_dims(sample_prob_maps, 0)
+    return logsumexp(np.sum(targets * np.log(sample_prob_maps + 1e-10), axis=(2, 3, 4)), axis=1) - np.log(m)
+
+
 def calculate_expert_diversity(exp_config):
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
@@ -153,7 +163,7 @@ def calculate_expert_diversity(exp_config):
 
 def calc_class_wise_expected_calibration_error(targets, prob_map, num_classes, num_bins):
     bins = np.linspace(0, 1, num_bins + 1)
-    prob_map = np.transpose(prob_map, axes=(-1, ) + tuple(range(len(prob_map.shape) -1)))
+    prob_map = np.transpose(prob_map, axes=(-1,) + tuple(range(len(prob_map.shape) - 1)))
     class_proportions = []
     total = []
     confidence = []
@@ -186,7 +196,9 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
     data_loader = data_switch(exp_config.data_identifier)
     data = data_loader(exp_config)
 
-    metrics = {key: [] for key in ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc', 'ece', 'unweighted_ece']}
+    metrics = {key: [] for key in
+               ['dsc', 'presence', 'ged', 'ncc', 'entropy', 'diversity', 'sample_dsc', 'ece', 'unweighted_ece',
+                'loglikelihood']}
 
     num_samples = 1 if exp_config.likelihood is likelihoods.det_unet2D else num_samples
 
@@ -211,6 +223,7 @@ def test(model_path, exp_config, model_selection='latest', num_samples=100, over
                 mean = np.reshape(mean, image.shape[:-1] + (2,))
                 prediction = np.argmax(mean, axis=-1)
 
+        metrics['loglikelihood'].append(calculate_log_likelihood(targets, prob_maps))
         # calculate DSC per expert
         metrics['dsc'].append(
             [[calc_dsc(target == i, prediction == i) for i in range(exp_config.nlabels)] for target in targets])
@@ -248,7 +261,6 @@ if __name__ == '__main__':
     parser.add_argument("--mode", type=bool, help="whether to use mode as prediction", default=False)
     parser.add_argument("--seed", type=int, help="random seed", default=10)
 
-
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device
     np.random.seed(args.seed)
@@ -278,8 +290,6 @@ if __name__ == '__main__':
             calculate_expert_diversity(exp_config)
         test(model_path, exp_config, model_selection, num_samples, args.overwrite, args.mode)
 
-
     output_dataframe = summarize_results(base_exp_path, exps, 2, model_selection, num_samples, args.mode)
     output_path = get_output_path(base_exp_path, num_samples, model_selection, args.mode) + '.csv'
     output_dataframe.to_csv(os.path.join(base_exp_path, output_path))
-
