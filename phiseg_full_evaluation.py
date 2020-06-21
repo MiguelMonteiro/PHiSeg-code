@@ -26,10 +26,10 @@ def nanstderr(array):
 def update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results, num_classes):
     exp_results['normalised_entropy'] = exp_results['entropy'] / (128 ** 2 * math.log(num_classes))
 
-    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy', 'ece', 'unweighted_ece',
-                   'loglikelihood']:
+    for column in ['ged', 'ncc', 'entropy', 'diversity', 'normalised_entropy', 'ece', 'unweighted_ece', 'loglikelihood']:
         output_dataframe.loc[exp, column + '_mean'] = np.nanmean(exp_results[column])
         output_dataframe.loc[exp, column + '_stderr'] = nanstderr(exp_results[column])
+    output_dataframe.loc[exp, 'sum_loglikelihood'] = np.sum(exp_results['loglikelihood'])
 
     for c in range(1, num_classes):
         # after looking at the data sets are no in fact per expert as there are far more than 4 experts so it makes
@@ -47,6 +47,15 @@ def update_output_dataframe(exp, output_dataframe, exp_results, det_exp_results,
         output_dataframe.loc[exp, f'fnr_c_{c:d}'] = np.sum(false_negatives) / np.sum(positives)
         output_dataframe.loc[exp, f'positives_c_{c:d}'] = np.sum(positives)
         output_dataframe.loc[exp, f'negatives_c_{c:d}'] = np.sum(negatives)
+        sample_dsc = exp_results['sample_dsc'][..., c].transpose((0, 2, 1))
+        sample_dsc = sample_dsc.reshape((-1, sample_dsc.shape[-1]))
+        sample_dsc_where_lesion = sample_dsc[positives]
+        sample_dsc = np.nanmean(sample_dsc, axis=-1)
+        sample_dsc_where_lesion = np.nanmean(sample_dsc_where_lesion, axis=-1)
+        output_dataframe.loc[exp, f'sample_dsc_c_{c:d}_mean'] = np.nanmean(sample_dsc)
+        output_dataframe.loc[exp, f'sample_dsc_c_{c:d}_stderr'] = nanstderr(sample_dsc)
+        output_dataframe.loc[exp, f'sample_dsc_where_lesion_c_{c:d}_mean'] = np.nanmean(sample_dsc_where_lesion)
+        output_dataframe.loc[exp, f'sample_dsc_where_lesion_c_{c:d}_stderr'] = nanstderr(sample_dsc_where_lesion)
     sample_gain = (exp_results['sample_dsc'] - np.expand_dims(det_exp_results['dsc'], 1))[..., 1:]
     output_dataframe.loc[exp, f'median_gain_mean'] = np.nanmean(np.nanmedian(sample_gain, axis=1))
     return output_dataframe
@@ -268,7 +277,7 @@ if __name__ == '__main__':
 
     model_selection = args.model_selection
     num_samples = args.num_samples
-    base_exp_path = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs/lidc'
+    base_exp_path = <BASE_EXP_PATH>
     base_config_path = 'phiseg/experiments'
     exps = ['detunet_1annot',
             'probunet_1annot',

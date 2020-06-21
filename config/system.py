@@ -12,9 +12,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 # when it is executed on one of the clusters.
 
 
-project_root = '/vol/biomedic2/mm6818/PycharmProjects/PHiSeg-code'
-local_hostnames = ['battle']  # used to check if on cluster or not
-log_root = '/vol/biomedic/users/mm6818/Projects/variational_hydra/phiseg_jobs'
+project_root = <PROJECT_ROOT>
+local_hostnames = [<HOST_NAME>]  # used to check if on cluster or not
+log_root = <LOG_ROOT>
 
 ##################################################################################
 

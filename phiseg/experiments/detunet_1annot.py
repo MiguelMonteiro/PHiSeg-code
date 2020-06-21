@@ -19,8 +19,8 @@ max_channel_power = 4  # max number of channels will be n0*2**max_channel_power
 
 # Data settings
 data_identifier = 'lidc'
-preproc_folder = '/vol/biomedic/users/mm6818/Projects/variational_hydra/data/LIDC_2D_PHiSeg'
-data_root = '/vol/biomedic/users/mm6818/data/LIDC/prob_unet/data_lidc.pickle'
+preproc_folder = <PREPROC_FOLDER>
+data_root = <DATA_ROOT>
 dimensionality_mode = '2D'
 image_size = (128, 128, 1)
 nlabels = 2
